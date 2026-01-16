@@ -11,7 +11,9 @@ from .serializers import (
     UserLoginSerializer,
     UserDetailSerializer,
     ChangePasswordSerializer,
+    UpdateTokenSerializer,
 )
+from .models import UserProfile
 
 
 @api_view(['POST'])
@@ -105,10 +107,23 @@ def get_current_user(request):
 @permission_classes([IsAuthenticated])
 def update_profile(request):
     """
-    修改用户个人信息（邮箱、名字等）
+    修改用户个人信息（邮箱等）
     PUT/PATCH: 修改用户信息
+    只支持修改 email 字段
     """
     user = request.user
+    
+    # 只允许修改 email
+    allowed_fields = {'email'}
+    provided_fields = set(request.data.keys())
+    invalid_fields = provided_fields - allowed_fields
+    
+    if invalid_fields:
+        return Response({
+            'success': False,
+            'message': f'不允许修改字段: {", ".join(invalid_fields)}'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
     serializer = UserDetailSerializer(user, data=request.data, partial=True)
     
     if serializer.is_valid():
@@ -208,4 +223,177 @@ def check_email_availability(request):
         'success': True,
         'available': not exists,
         'email': email
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_user_token(request):
+    """
+    获取当前用户的 token（虚拟货币）余额
+    GET: 返回用户的 token 余额
+    """
+    user = request.user
+    try:
+        profile = user.profile
+    except UserProfile.DoesNotExist:
+        profile = UserProfile.objects.create(user=user, token=0)
+    
+    return Response({
+        'success': True,
+        'user_id': user.id,
+        'username': user.username,
+        'token': profile.token
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_user_token(request):
+    """
+    修改用户的 token（虚拟货币）余额
+    POST:
+        token: 新的 token 值（必须是非负整数）
+    
+    注：此操作通常由网站内部逻辑调用，前端应谨慎调用此端点
+    """
+    user = request.user
+    serializer = UpdateTokenSerializer(data=request.data)
+    
+    if serializer.is_valid():
+        try:
+            profile = user.profile
+        except UserProfile.DoesNotExist:
+            profile = UserProfile.objects.create(user=user, token=0)
+        
+        new_token = serializer.validated_data['token']
+        old_token = profile.token
+        profile.token = new_token
+        profile.save()
+        
+        return Response({
+            'success': True,
+            'message': 'Token 已更新',
+            'user_id': user.id,
+            'username': user.username,
+            'old_token': old_token,
+            'new_token': new_token
+        }, status=status.HTTP_200_OK)
+    
+    return Response({
+        'success': False,
+        'errors': serializer.errors
+    }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def add_user_token(request):
+    """
+    增加用户的 token（虚拟货币）
+    POST:
+        amount: 增加的 token 数量（必须是正整数）
+    
+    例：
+    - {"amount": 100} 增加 100 token
+    """
+    user = request.user
+    
+    try:
+        amount = int(request.data.get('amount', 0))
+    except (ValueError, TypeError):
+        return Response({
+            'success': False,
+            'message': 'amount 必须是整数'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if amount < 0:
+        return Response({
+            'success': False,
+            'message': '增加数量必须为正数，如需扣除请使用 /token/deduct/ 端点'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        profile = user.profile
+    except UserProfile.DoesNotExist:
+        profile = UserProfile.objects.create(user=user, token=0)
+    
+    old_token = profile.token
+    new_token = old_token + amount
+    profile.token = new_token
+    profile.save()
+    
+    return Response({
+        'success': True,
+        'message': f'Token 已增加 {amount}',
+        'user_id': user.id,
+        'username': user.username,
+        'old_token': old_token,
+        'new_token': new_token,
+        'amount_changed': amount
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def deduct_user_token(request):
+    """
+    扣除用户的 token（虚拟货币）
+    POST:
+        amount: 扣除的 token 数量（必须是正整数）
+    
+    例：
+    - {"amount": 50} 扣除 50 token
+    
+    错误：
+    - 如果 token 余额不足，返回 400 错误
+    """
+    user = request.user
+    
+    try:
+        amount = int(request.data.get('amount', 0))
+    except (ValueError, TypeError):
+        return Response({
+            'success': False,
+            'message': 'amount 必须是整数'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if amount < 0:
+        return Response({
+            'success': False,
+            'message': '扣除数量必须为正数'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if amount == 0:
+        return Response({
+            'success': False,
+            'message': '扣除数量必须大于 0'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        profile = user.profile
+    except UserProfile.DoesNotExist:
+        profile = UserProfile.objects.create(user=user, token=0)
+    
+    old_token = profile.token
+    new_token = old_token - amount
+    
+    # 防止 token 变成负数
+    if new_token < 0:
+        return Response({
+            'success': False,
+            'message': f'Token 余额不足。当前余额: {old_token}，无法扣除 {amount}'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    profile.token = new_token
+    profile.save()
+    
+    return Response({
+        'success': True,
+        'message': f'Token 已扣除 {amount}',
+        'user_id': user.id,
+        'username': user.username,
+        'old_token': old_token,
+        'new_token': new_token,
+        'amount_changed': -amount
     }, status=status.HTTP_200_OK)

@@ -14,6 +14,12 @@ urlpatterns = [
     # 密码管理
     path('change-password/', views.change_password, name='change_password'),
     
+    # Token（虚拟货币）管理
+    path('token/', views.get_user_token, name='get_user_token'),
+    path('token/update/', views.update_user_token, name='update_user_token'),
+    path('token/add/', views.add_user_token, name='add_user_token'),
+    path('token/deduct/', views.deduct_user_token, name='deduct_user_token'),
+    
     # 验证相关
     path('check-username/', views.check_username_availability, name='check_username_availability'),
     path('check-email/', views.check_email_availability, name='check_email_availability'),

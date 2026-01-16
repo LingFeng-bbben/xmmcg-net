@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from .models import UserProfile
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -20,11 +21,9 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('username', 'email', 'password', 'password_confirm', 'first_name', 'last_name')
+        fields = ('username', 'email', 'password', 'password_confirm')
         extra_kwargs = {
             'email': {'required': True},
-            'first_name': {'required': False},
-            'last_name': {'required': False},
         }
 
     def validate(self, data):
@@ -49,12 +48,14 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        """创建用户"""
+        """创建用户和用户资料"""
         validated_data.pop('password_confirm')
         password = validated_data.pop('password')
         user = User.objects.create(**validated_data)
         user.set_password(password)
         user.save()
+        # 创建用户资料（包含 token）
+        UserProfile.objects.create(user=user, token=0)
         return user
 
 
@@ -69,11 +70,12 @@ class UserLoginSerializer(serializers.Serializer):
 
 class UserDetailSerializer(serializers.ModelSerializer):
     """用户详情序列化器（获取和修改用户信息）"""
+    token = serializers.IntegerField(source='profile.token', read_only=True)
     
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'is_active', 'date_joined')
-        read_only_fields = ('id', 'username', 'date_joined')
+        fields = ('id', 'username', 'email', 'is_active', 'date_joined', 'token')
+        read_only_fields = ('id', 'username', 'date_joined', 'token')
 
 
 class ChangePasswordSerializer(serializers.Serializer):
@@ -93,3 +95,14 @@ class ChangePasswordSerializer(serializers.Serializer):
                 'new_password': '两次输入的新密码不一致'
             })
         return data
+
+
+class UpdateTokenSerializer(serializers.Serializer):
+    """修改用户 token 序列化器"""
+    token = serializers.IntegerField(required=True, min_value=0)
+
+    def validate_token(self, value):
+        """验证 token 值"""
+        if value < 0:
+            raise serializers.ValidationError("Token 不能为负数")
+        return value
