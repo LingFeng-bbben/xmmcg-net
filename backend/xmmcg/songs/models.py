@@ -278,13 +278,36 @@ class Song(models.Model):
 
 
 class BiddingRound(models.Model):
-    """竞标轮次"""
+    """竞标轮次（统一支持歌曲和谱面竞标）"""
     
     STATUS_CHOICES = [
         ('pending', '待开始'),
         ('active', '进行中'),
         ('completed', '已完成'),
     ]
+    
+    BIDDING_TYPE_CHOICES = [
+        ('song', '歌曲竞标'),
+        ('chart', '谱面竞标'),
+    ]
+    
+    # 关联比赛阶段
+    competition_phase = models.ForeignKey(
+        CompetitionPhase,
+        on_delete=models.CASCADE,
+        related_name='bidding_rounds',
+        null=True,
+        blank=True,
+        help_text='所属比赛阶段（可选，用于与比赛流程关联）'
+    )
+    
+    # 竞标类型
+    bidding_type = models.CharField(
+        max_length=20,
+        choices=BIDDING_TYPE_CHOICES,
+        default='song',
+        help_text='竞标类型：歌曲竞标或谱面竞标'
+    )
     
     name = models.CharField(
         max_length=100,
@@ -317,7 +340,8 @@ class BiddingRound(models.Model):
         ordering = ['-created_at']
     
     def __str__(self):
-        return f"{self.name} ({self.get_status_display()})"
+        type_display = self.get_bidding_type_display()
+        return f"{self.name} ({type_display} - {self.get_status_display()})"
 
 
 class Bid(models.Model):

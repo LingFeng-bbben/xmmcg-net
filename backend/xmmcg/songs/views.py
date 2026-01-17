@@ -436,13 +436,17 @@ def user_bids_root(request):
                 # 尝试获取 CompetitionPhase
                 phase = CompetitionPhase.objects.get(id=round_id, phase_key__icontains='bidding')
                 
-                # 查找或创建对应的 BiddingRound
-                round_obj, created = BiddingRound.objects.get_or_create(
-                    name=phase.name,
-                    defaults={
-                        'status': 'active' if timezone.now() < phase.end_time else 'completed'
-                    }
-                )
+                # 通过外键查找歌曲竞标轮次
+                round_obj = phase.bidding_rounds.filter(bidding_type='song').first()
+                
+                if not round_obj:
+                    # 自动创建绑定到阶段的轮次
+                    round_obj = BiddingRound.objects.create(
+                        competition_phase=phase,
+                        bidding_type='song',
+                        name=phase.name,
+                        status='active' if timezone.now() < phase.end_time else 'completed'
+                    )
             except CompetitionPhase.DoesNotExist:
                 # 如果不是 CompetitionPhase，尝试作为 BiddingRound ID
                 try:
@@ -464,10 +468,14 @@ def user_bids_root(request):
             
             if active_phase:
                 # 查找或创建对应的 BiddingRound
-                round_obj, created = BiddingRound.objects.get_or_create(
-                    name=active_phase.name,
-                    defaults={'status': 'active'}
-                )
+                round_obj = active_phase.bidding_rounds.filter(bidding_type='song').first()
+                if not round_obj:
+                    round_obj = BiddingRound.objects.create(
+                        competition_phase=active_phase,
+                        bidding_type='song',
+                        name=active_phase.name,
+                        status='active'
+                    )
             else:
                 return Response({
                     'success': True,
@@ -527,11 +535,15 @@ def user_bids_root(request):
             # 先尝试作为 CompetitionPhase ID
             try:
                 phase = CompetitionPhase.objects.get(id=round_id, phase_key__icontains='bidding')
-                # 查找或创建对应的 BiddingRound
-                round_obj, created = BiddingRound.objects.get_or_create(
-                    name=phase.name,
-                    defaults={'status': 'active'}
-                )
+                # 通过外键查找歌曲竞标轮次
+                round_obj = phase.bidding_rounds.filter(bidding_type='song').first()
+                if not round_obj:
+                    round_obj = BiddingRound.objects.create(
+                        competition_phase=phase,
+                        bidding_type='song',
+                        name=phase.name,
+                        status='active'
+                    )
             except CompetitionPhase.DoesNotExist:
                 # 尝试作为 BiddingRound ID
                 try:
@@ -552,10 +564,14 @@ def user_bids_root(request):
             ).first()
             
             if active_phase:
-                round_obj, created = BiddingRound.objects.get_or_create(
-                    name=active_phase.name,
-                    defaults={'status': 'active'}
-                )
+                round_obj = active_phase.bidding_rounds.filter(bidding_type='song').first()
+                if not round_obj:
+                    round_obj = BiddingRound.objects.create(
+                        competition_phase=active_phase,
+                        bidding_type='song',
+                        name=active_phase.name,
+                        status='active'
+                    )
             else:
                 return Response({
                     'success': False,

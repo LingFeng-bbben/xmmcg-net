@@ -150,10 +150,13 @@
                   <el-tag type="warning">{{ row.amount }} Token</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="is_dropped" label="状态" width="100">
+              <el-table-column prop="status" label="状态" width="120">
                 <template #default="{ row }">
-                  <el-tag :type="row.is_dropped ? 'danger' : 'success'">
-                    {{ row.is_dropped ? '已被抢' : '进行中' }}
+                  <el-tag 
+                    :type="getBidStatusType(row.status)"
+                    :effect="row.status === 'won' ? 'dark' : 'plain'"
+                  >
+                    {{ getBidStatusText(row.status) }}
                   </el-tag>
                 </template>
               </el-table-column>
@@ -1010,6 +1013,26 @@ const formatDate = (dateString) => {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+// 获取竞标状态文本
+const getBidStatusText = (status) => {
+  const statusMap = {
+    'bidding': '进行中',
+    'won': '✓ 已中选',
+    'lost': '已落选'
+  }
+  return statusMap[status] || '未知'
+}
+
+// 获取竞标状态标签类型
+const getBidStatusType = (status) => {
+  const typeMap = {
+    'bidding': 'info',
+    'won': 'success',
+    'lost': 'danger'
+  }
+  return typeMap[status] || 'info'
 }
 
 // 获取完整的图片 URL

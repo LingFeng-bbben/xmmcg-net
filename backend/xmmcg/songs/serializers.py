@@ -170,11 +170,41 @@ class BidSerializer(serializers.ModelSerializer):
     """竞标序列化器"""
     song = SongListSerializer(read_only=True)
     username = serializers.CharField(source='user.username', read_only=True)
+    status = serializers.SerializerMethodField()
     
     class Meta:
         model = Bid
-        fields = ('id', 'username', 'song', 'amount', 'is_dropped', 'created_at')
+        fields = ('id', 'username', 'song', 'amount', 'is_dropped', 'status', 'created_at')
         read_only_fields = ('id', 'username', 'is_dropped', 'created_at')
+    
+    def get_status(self, obj):
+        """
+        获取竞标状态
+        - bidding: 进行中
+        - won: 已中选
+        - lost: 已落选
+        """
+        from .models import BidResult
+        
+        # 检查竞标轮次是否已完成
+        if obj.bidding_round.status != 'completed':
+            return 'bidding'
+        
+        # 检查是否中选
+        result = BidResult.objects.filter(
+            bidding_round=obj.bidding_round,
+            user=obj.user
+        ).first()
+        
+        if result:
+            # 检查是否是这个竞标对应的歌曲
+            if result.song_id == obj.song_id:
+                return 'won'  # 中选了这首歌
+            else:
+                return 'lost'  # 中选了其他歌，这个落选
+        
+        # 已dropped或未中选
+        return 'lost' if obj.is_dropped else 'bidding'
 
 
 class BidResultSerializer(serializers.ModelSerializer):

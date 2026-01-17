@@ -94,8 +94,8 @@ class CompetitionPhaseAdmin(admin.ModelAdmin):
 
 @admin.register(BiddingRound)
 class BiddingRoundAdmin(admin.ModelAdmin):
-    list_display = ('name', 'status', 'created_at', 'started_at', 'completed_at')
-    list_filter = ('status', 'created_at')
+    list_display = ('name', 'bidding_type', 'competition_phase', 'status', 'created_at', 'started_at', 'completed_at')
+    list_filter = ('bidding_type', 'status', 'created_at', 'competition_phase')
     ordering = ('-created_at',)
     search_fields = ('name',)
     actions = ['allocate_bids_action']
@@ -139,11 +139,15 @@ class BiddingRoundAdmin(admin.ModelAdmin):
                 '\n'.join(error_messages),
                 level=messages.WARNING
             )
+    
     readonly_fields = ('created_at',)
     
     fieldsets = (
         ('基本信息', {
-            'fields': ('name', 'status')
+            'fields': ('name', 'bidding_type', 'competition_phase')
+        }),
+        ('状态管理', {
+            'fields': ('status',)
         }),
         ('时间信息', {
             'fields': ('started_at', 'completed_at', 'created_at')

@@ -76,10 +76,17 @@ class BiddingService:
         
         # 追踪已分配的歌曲和用户
         allocated_songs = set()  # 已分配的歌曲ID集合
-        allocated_users = {}     # 用户ID -> [歌曲列表]，用于追踪每个用户获得的歌曲
+        allocated_users = {}     # 用户ID -> 歌曲ID（每个用户最多一首）
         
         # 第一阶段：按出价从高到低进行分配
         for bid in all_bids:
+            # 如果用户已经中标，skip该用户的所有后续竞标
+            if bid.user.id in allocated_users:
+                # 用户已经中标，drop这个竞标
+                bid.is_dropped = True
+                bid.save()
+                continue
+            
             if bid.song.id not in allocated_songs:
                 # 该歌曲尚未被分配，分配给该竞标者
                 BidResult.objects.create(
@@ -90,10 +97,14 @@ class BiddingService:
                     allocation_type='win'
                 )
                 allocated_songs.add(bid.song.id)
+                allocated_users[bid.user.id] = bid.song.id  # 记录用户已中标
                 
-                if bid.user.id not in allocated_users:
-                    allocated_users[bid.user.id] = []
-                allocated_users[bid.user.id].append(bid.song.id)
+                # 立即drop该用户的所有其他竞标
+                Bid.objects.filter(
+                    bidding_round=bidding_round,
+                    user=bid.user,
+                    is_dropped=False
+                ).exclude(id=bid.id).update(is_dropped=True)
             else:
                 # 该歌曲已被更高出价者获得，标记此竞标为drop
                 bid.is_dropped = True
