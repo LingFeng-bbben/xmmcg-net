@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Song, Banner, Announcement, CompetitionPhase
+from .models import Song, Banner, Announcement, CompetitionPhase, BiddingRound, Bid, BidResult
 
 
 @admin.register(Song)
@@ -87,6 +87,62 @@ class CompetitionPhaseAdmin(admin.ModelAdmin):
         }),
         ('系统', {
             'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(BiddingRound)
+class BiddingRoundAdmin(admin.ModelAdmin):
+    list_display = ('name', 'status', 'created_at', 'started_at', 'completed_at')
+    list_filter = ('status', 'created_at')
+    ordering = ('-created_at',)
+    search_fields = ('name',)
+    readonly_fields = ('created_at',)
+    
+    fieldsets = (
+        ('基本信息', {
+            'fields': ('name', 'status')
+        }),
+        ('时间信息', {
+            'fields': ('started_at', 'completed_at', 'created_at')
+        }),
+    )
+
+
+@admin.register(Bid)
+class BidAdmin(admin.ModelAdmin):
+    list_display = ('bidding_round', 'user', 'song', 'amount', 'is_dropped', 'created_at')
+    list_filter = ('bidding_round', 'is_dropped', 'created_at')
+    ordering = ('-created_at',)
+    search_fields = ('user__username', 'song__title', 'bidding_round__name')
+    readonly_fields = ('created_at',)
+    
+    fieldsets = (
+        ('竞标信息', {
+            'fields': ('bidding_round', 'user', 'song', 'amount', 'is_dropped')
+        }),
+        ('系统', {
+            'fields': ('created_at',),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(BidResult)
+class BidResultAdmin(admin.ModelAdmin):
+    list_display = ('bidding_round', 'song', 'user', 'bid_amount', 'allocation_type', 'allocated_at')
+    list_filter = ('bidding_round', 'allocation_type', 'allocated_at')
+    ordering = ('-allocated_at',)
+    search_fields = ('song__title', 'user__username', 'bidding_round__name')
+    readonly_fields = ('allocated_at',)
+    
+    fieldsets = (
+        ('竞标结果', {
+            'fields': ('bidding_round', 'song', 'user', 'bid_amount', 'allocation_type')
+        }),
+        ('系统', {
+            'fields': ('allocated_at',),
             'classes': ('collapse',)
         }),
     )

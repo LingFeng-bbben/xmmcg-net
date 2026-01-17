@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
-from .models import Song, Bid, BiddingRound, BidResult, MAX_SONGS_PER_USER, MAX_BIDS_PER_USER, Banner, Announcement
+from .models import Song, Bid, BiddingRound, BidResult, MAX_SONGS_PER_USER, MAX_BIDS_PER_USER, Banner, Announcement, CompetitionPhase
 from .serializers import (
     SongUploadSerializer,
     SongDetailSerializer,
@@ -14,6 +14,7 @@ from .serializers import (
     SongUpdateSerializer,
     BannerSerializer,
     AnnouncementSerializer,
+    CompetitionPhaseSerializer,
 )
 from .bidding_service import BiddingService
 
@@ -40,10 +41,23 @@ def get_announcements(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_competition_status(request):
-    """公开的比赛状态，用于前端首页展示。"""
-    round_obj = BiddingRound.objects.order_by('-created_at').first()
-
-    if not round_obj:
+    """公开的比赛状态，用于前端首页展示（从 CompetitionPhase 获取）"""
+    now = timezone.now()
+    
+    # 获取当前活跃的阶段（不限于竞标阶段）
+    current_phase = CompetitionPhase.objects.filter(
+        is_active=True,
+        start_time__lte=now,
+        end_time__gte=now
+    ).first()
+    
+    if not current_phase:
+        # 如果没有当前活跃阶段，尝试获取最近的阶段
+        current_phase = CompetitionPhase.objects.filter(
+            is_active=True
+        ).order_by('-start_time').first()
+    
+    if not current_phase:
         return Response({
             'currentRound': '未开始',
             'status': 'pending',
@@ -51,16 +65,54 @@ def get_competition_status(request):
             'participants': 0,
             'submissions': 0,
         }, status=status.HTTP_200_OK)
-
-    participants = Bid.objects.filter(bidding_round=round_obj).values('user_id').distinct().count()
-    submissions = Song.objects.filter(bids__bidding_round=round_obj).distinct().count()
+    
+    # 根据时间判断状态
+    if now < current_phase.start_time:
+        status_val = 'pending'
+        status_text = '待开始'
+    elif now > current_phase.end_time:
+        status_val = 'completed'
+        status_text = '已完成'
+    else:
+        status_val = 'active'
+        status_text = '进行中'
+    
+    # 根据阶段类型计算参与人数和提交作品数
+    phase_key = current_phase.phase_key
+    
+    # 计算参与人数（全局统计）
+    total_participants = Bid.objects.values('user_id').distinct().count()
+    
+    # 根据阶段类型计算提交作品数
+    if 'bidding' in phase_key:
+        # 竞标阶段：统计歌曲数
+        submissions_count = Song.objects.count()
+        submissions_label = '歌曲数'
+    elif 'mapping' in phase_key or 'chart' in phase_key:
+        # 制谱阶段：统计谱面数
+        from .models import Chart
+        submissions_count = Chart.objects.count()
+        submissions_label = '谱面数'
+    elif 'peer_review' in phase_key or 'review' in phase_key:
+        # 互评阶段：统计已提交的谱面数
+        from .models import Chart
+        submissions_count = Chart.objects.filter(status='submitted').count()
+        submissions_label = '待评谱面数'
+    else:
+        # 其他阶段：默认统计歌曲数
+        submissions_count = Song.objects.count()
+        submissions_label = '作品数'
 
     return Response({
-        'currentRound': round_obj.name,
-        'status': round_obj.status,
-        'statusText': round_obj.get_status_display(),
-        'participants': participants,
-        'submissions': submissions,
+        'currentRound': current_phase.name,
+        'status': status_val,
+        'statusText': status_text,
+        'participants': total_participants,
+        'submissions': submissions_count,
+        'submissionsLabel': submissions_label,  # 新增：提交作品数的标签
+        'phaseKey': current_phase.phase_key,
+        'startTime': current_phase.start_time,
+        'endTime': current_phase.end_time,
     }, status=status.HTTP_200_OK)
 
 
@@ -68,9 +120,6 @@ def get_competition_status(request):
 @permission_classes([AllowAny])
 def get_competition_phases(request):
     """获取所有比赛阶段信息"""
-    from .models import CompetitionPhase
-    from .serializers import CompetitionPhaseSerializer
-    
     phases = CompetitionPhase.objects.filter(is_active=True).order_by('order')
     serializer = CompetitionPhaseSerializer(phases, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
@@ -80,10 +129,6 @@ def get_competition_phases(request):
 @permission_classes([AllowAny])
 def get_current_phase(request):
     """获取当前活跃的比赛阶段及权限信息"""
-    from .models import CompetitionPhase
-    from .serializers import CompetitionPhaseSerializer
-    from django.utils import timezone
-    
     now = timezone.now()
     
     # 获取当前进行中的阶段
@@ -329,71 +374,53 @@ def get_song_detail(request, song_id):
 
 # ==================== 竞标相关 API ====================
 
-@api_view(['GET', 'POST'])
+@api_view(['GET'])
 @permission_classes([AllowAny])
 def bidding_rounds_root(request):
     """
     竞标轮次管理
-    GET /api/bidding-rounds/ - 列出所有竞标轮次
-    POST /api/bidding-rounds/ - 创建新的竞标轮次（需要 admin 权限）
+    GET /api/bidding-rounds/ - 列出所有竞标轮次（从 CompetitionPhase 中提取）
     """
-    if request.method == 'GET':
-        # 列出所有竞标轮次
-        rounds = BiddingRound.objects.all().order_by('-created_at')
-        
-        data = []
-        for round_obj in rounds:
-            bid_count = Bid.objects.filter(bidding_round=round_obj).count()
-            result_count = BidResult.objects.filter(bidding_round=round_obj).count()
-            
-            data.append({
-                'id': round_obj.id,
-                'name': round_obj.name,
-                'status': round_obj.status,
-                'status_display': round_obj.get_status_display(),
-                'created_at': round_obj.created_at,
-                'started_at': round_obj.started_at,
-                'completed_at': round_obj.completed_at,
-                'bid_count': bid_count,
-                'result_count': result_count,
-            })
-        
-        return Response({
-            'success': True,
-            'count': len(data),
-            'rounds': data
-        }, status=status.HTTP_200_OK)
+    # 从 CompetitionPhase 中获取竞标相关的阶段
+    # phase_key 包含 'bidding' 的阶段
+    phases = CompetitionPhase.objects.filter(
+        phase_key__icontains='bidding',
+        is_active=True
+    ).order_by('start_time')
     
-    else:  # POST - 创建竞标轮次
-        # 仅 admin 用户可以创建
-        if not request.user.is_authenticated or not request.user.is_staff:
-            return Response({
-                'success': False,
-                'message': '需要管理员权限'
-            }, status=status.HTTP_403_FORBIDDEN)
+    now = timezone.now()
+    data = []
+    
+    for phase in phases:
+        # 根据时间判断状态
+        if now < phase.start_time:
+            status_val = 'pending'
+        elif now > phase.end_time:
+            status_val = 'completed'
+        else:
+            status_val = 'active'
         
-        name = request.data.get('name', '')
-        if not name:
-            return Response({
-                'success': False,
-                'message': '竞标轮次名称不能为空'
-            }, status=status.HTTP_400_BAD_REQUEST)
+        # 计算该阶段的竞标信息
+        # 暂时返回0，后续可以通过关联 BiddingRound 来统计
+        bid_count = 0
         
-        round_obj = BiddingRound.objects.create(
-            name=name,
-            status='active'
-        )
-        
-        return Response({
-            'success': True,
-            'message': '竞标轮次已创建',
-            'round': {
-                'id': round_obj.id,
-                'name': round_obj.name,
-                'status': round_obj.status,
-                'created_at': round_obj.created_at,
-            }
-        }, status=status.HTTP_201_CREATED)
+        data.append({
+            'id': phase.id,
+            'name': phase.name,
+            'status': status_val,
+            'status_display': '待开始' if status_val == 'pending' else ('进行中' if status_val == 'active' else '已完成'),
+            'phase_key': phase.phase_key,
+            'start_time': phase.start_time,
+            'end_time': phase.end_time,
+            'description': phase.description,
+            'bid_count': bid_count,
+        })
+    
+    return Response({
+        'success': True,
+        'count': len(data),
+        'rounds': data
+    }, status=status.HTTP_200_OK)
 
 
 @api_view(['GET', 'POST'])
@@ -410,22 +437,52 @@ def user_bids_root(request):
         # 获取活跃的竞标轮次
         round_id = request.query_params.get('round_id')
         
+        # 如果提供了 round_id，先尝试作为 CompetitionPhase ID
+        # 然后查找或创建对应的 BiddingRound
         if round_id:
             try:
-                round_obj = BiddingRound.objects.get(id=round_id, status='active')
-            except BiddingRound.DoesNotExist:
-                return Response({
-                    'success': False,
-                    'message': '竞标轮次不存在或已结束'
-                }, status=status.HTTP_404_NOT_FOUND)
+                # 尝试获取 CompetitionPhase
+                phase = CompetitionPhase.objects.get(id=round_id, phase_key__icontains='bidding')
+                
+                # 查找或创建对应的 BiddingRound
+                round_obj, created = BiddingRound.objects.get_or_create(
+                    name=phase.name,
+                    defaults={
+                        'status': 'active' if timezone.now() < phase.end_time else 'completed'
+                    }
+                )
+            except CompetitionPhase.DoesNotExist:
+                # 如果不是 CompetitionPhase，尝试作为 BiddingRound ID
+                try:
+                    round_obj = BiddingRound.objects.get(id=round_id)
+                except BiddingRound.DoesNotExist:
+                    return Response({
+                        'success': False,
+                        'message': '竞标轮次不存在'
+                    }, status=status.HTTP_404_NOT_FOUND)
         else:
-            # 获取最新的活跃竞标轮次
-            round_obj = BiddingRound.objects.filter(status='active').first()
-            if not round_obj:
+            # 获取当前活跃的竞标阶段
+            now = timezone.now()
+            active_phase = CompetitionPhase.objects.filter(
+                phase_key__icontains='bidding',
+                is_active=True,
+                start_time__lte=now,
+                end_time__gte=now
+            ).first()
+            
+            if active_phase:
+                # 查找或创建对应的 BiddingRound
+                round_obj, created = BiddingRound.objects.get_or_create(
+                    name=active_phase.name,
+                    defaults={'status': 'active'}
+                )
+            else:
                 return Response({
                     'success': True,
                     'message': '当前没有活跃的竞标轮次',
-                    'bids': []
+                    'bids': [],
+                    'bid_count': 0,
+                    'max_bids': MAX_BIDS_PER_USER,
                 }, status=status.HTTP_200_OK)
         
         # 获取用户在该轮次的所有竞标
@@ -473,18 +530,41 @@ def user_bids_root(request):
                 'message': '歌曲不存在'
             }, status=status.HTTP_404_NOT_FOUND)
         
-        # 获取竞标轮次
+        # 获取竞标轮次（支持 CompetitionPhase ID 或 BiddingRound ID）
         if round_id:
+            # 先尝试作为 CompetitionPhase ID
             try:
-                round_obj = BiddingRound.objects.get(id=round_id)
-            except BiddingRound.DoesNotExist:
-                return Response({
-                    'success': False,
-                    'message': '竞标轮次不存在'
-                }, status=status.HTTP_404_NOT_FOUND)
+                phase = CompetitionPhase.objects.get(id=round_id, phase_key__icontains='bidding')
+                # 查找或创建对应的 BiddingRound
+                round_obj, created = BiddingRound.objects.get_or_create(
+                    name=phase.name,
+                    defaults={'status': 'active'}
+                )
+            except CompetitionPhase.DoesNotExist:
+                # 尝试作为 BiddingRound ID
+                try:
+                    round_obj = BiddingRound.objects.get(id=round_id)
+                except BiddingRound.DoesNotExist:
+                    return Response({
+                        'success': False,
+                        'message': '竞标轮次不存在'
+                    }, status=status.HTTP_404_NOT_FOUND)
         else:
-            round_obj = BiddingRound.objects.filter(status='active').first()
-            if not round_obj:
+            # 获取当前活跃的竞标阶段
+            now = timezone.now()
+            active_phase = CompetitionPhase.objects.filter(
+                phase_key__icontains='bidding',
+                is_active=True,
+                start_time__lte=now,
+                end_time__gte=now
+            ).first()
+            
+            if active_phase:
+                round_obj, created = BiddingRound.objects.get_or_create(
+                    name=active_phase.name,
+                    defaults={'status': 'active'}
+                )
+            else:
                 return Response({
                     'success': False,
                     'message': '当前没有活跃的竞标轮次'

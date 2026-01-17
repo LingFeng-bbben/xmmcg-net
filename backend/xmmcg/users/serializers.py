@@ -70,7 +70,7 @@ class UserLoginSerializer(serializers.Serializer):
 
 class UserDetailSerializer(serializers.ModelSerializer):
     """用户详情序列化器（获取和修改用户信息）"""
-    token = serializers.IntegerField(source='profile.token', read_only=True)
+    token = serializers.SerializerMethodField()
     songsCount = serializers.SerializerMethodField()
     chartsCount = serializers.SerializerMethodField()
     
@@ -78,6 +78,16 @@ class UserDetailSerializer(serializers.ModelSerializer):
         model = User
         fields = ('username', 'email', 'is_active', 'date_joined', 'token', 'songsCount', 'chartsCount')
         read_only_fields = ('username', 'date_joined', 'token', 'songsCount', 'chartsCount')
+    
+    def get_token(self, obj):
+        """获取用户代币，如果没有 profile 则创建一个"""
+        try:
+            return obj.profile.token
+        except:
+            # 如果没有 profile，创建一个
+            from .models import UserProfile
+            profile, created = UserProfile.objects.get_or_create(user=obj)
+            return profile.token
     
     def get_songsCount(self, obj):
         """获取用户上传的歌曲数量"""

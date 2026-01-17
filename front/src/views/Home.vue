@@ -36,7 +36,7 @@
             </el-col>
             <el-col :xs="24" :sm="12" :md="6">
               <div class="status-item">
-                <div class="status-label">提交作品数</div>
+                <div class="status-label">{{ competitionStatus.submissionsLabel || '提交作品数' }}</div>
                 <div class="status-value">{{ competitionStatus.submissions || 0 }}</div>
               </div>
             </el-col>

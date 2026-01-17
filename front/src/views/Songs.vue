@@ -439,7 +439,7 @@
           <el-input-number
             v-model="bidForm.amount"
             :min="1"
-            :max="userToken"
+            :max="Math.max(1, userToken)"
             placeholder="输入竞标金额"
             style="width: 100%"
           />
@@ -583,7 +583,6 @@ const bidSubmitting = ref(false)
 const userToken = ref(0)
 const currentRound = ref(null)
 const myBidsCount = ref(0)
-const maxBids = ref(5)
 
 // 计算属性：过滤后的歌曲
 const filteredSongs = computed(() => {
@@ -876,9 +875,10 @@ const openNeteaseUrl = (url) => {
 const showBidDialog = async (song) => {
   // 加载当前竞标轮次和用户信息
   try {
-    // 获取竞标轮次
+    // 获取竞标轮次（从 CompetitionPhase 获取）
     const roundsResponse = await getBiddingRounds()
     if (roundsResponse.success && roundsResponse.rounds.length > 0) {
+      // 找活跃的竞标阶段
       const activeRound = roundsResponse.rounds.find(r => r.status === 'active')
       if (!activeRound) {
         ElMessage.warning('当前没有活跃的竞标轮次')
