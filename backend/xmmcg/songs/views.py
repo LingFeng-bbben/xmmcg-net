@@ -6,14 +6,133 @@ from django.shortcuts import get_object_or_404
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
-from .models import Song, Bid, BiddingRound, BidResult, MAX_SONGS_PER_USER, MAX_BIDS_PER_USER
+from .models import Song, Bid, BiddingRound, BidResult, MAX_SONGS_PER_USER, MAX_BIDS_PER_USER, Banner, Announcement
 from .serializers import (
     SongUploadSerializer,
     SongDetailSerializer,
     SongListSerializer,
     SongUpdateSerializer,
+    BannerSerializer,
+    AnnouncementSerializer,
 )
 from .bidding_service import BiddingService
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_banners(request):
+    """获取启用的 Banner 列表"""
+    banners = Banner.objects.filter(is_active=True).order_by('-priority')
+    serializer = BannerSerializer(banners, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_announcements(request):
+    """获取启用的公告列表（分页）"""
+    limit = int(request.query_params.get('limit', 10))
+    announcements = Announcement.objects.filter(is_active=True).order_by('-is_pinned', '-priority', '-created_at')[:limit]
+    serializer = AnnouncementSerializer(announcements, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_competition_status(request):
+    """公开的比赛状态，用于前端首页展示。"""
+    round_obj = BiddingRound.objects.order_by('-created_at').first()
+
+    if not round_obj:
+        return Response({
+            'currentRound': '未开始',
+            'status': 'pending',
+            'statusText': '待开始',
+            'participants': 0,
+            'submissions': 0,
+        }, status=status.HTTP_200_OK)
+
+    participants = Bid.objects.filter(bidding_round=round_obj).values('user_id').distinct().count()
+    submissions = Song.objects.filter(bids__bidding_round=round_obj).distinct().count()
+
+    return Response({
+        'currentRound': round_obj.name,
+        'status': round_obj.status,
+        'statusText': round_obj.get_status_display(),
+        'participants': participants,
+        'submissions': submissions,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_competition_phases(request):
+    """获取所有比赛阶段信息"""
+    from .models import CompetitionPhase
+    from .serializers import CompetitionPhaseSerializer
+    
+    phases = CompetitionPhase.objects.filter(is_active=True).order_by('order')
+    serializer = CompetitionPhaseSerializer(phases, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_current_phase(request):
+    """获取当前活跃的比赛阶段及权限信息"""
+    from .models import CompetitionPhase
+    from .serializers import CompetitionPhaseSerializer
+    from django.utils import timezone
+    
+    now = timezone.now()
+    
+    # 获取当前进行中的阶段
+    current_phase = CompetitionPhase.objects.filter(
+        is_active=True,
+        start_time__lte=now,
+        end_time__gte=now
+    ).first()
+    
+    if current_phase:
+        serializer = CompetitionPhaseSerializer(current_phase)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    else:
+        # 如果没有进行中的阶段，返回下一个即将开始的阶段
+        next_phase = CompetitionPhase.objects.filter(
+            is_active=True,
+            start_time__gt=now
+        ).order_by('start_time').first()
+        
+        if next_phase:
+            serializer = CompetitionPhaseSerializer(next_phase)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        else:
+            # 都没有，返回最后一个阶段
+            last_phase = CompetitionPhase.objects.filter(
+                is_active=True
+            ).order_by('-end_time').first()
+            
+            if last_phase:
+                serializer = CompetitionPhaseSerializer(last_phase)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    'error': '暂无比赛阶段信息'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_announcements_old(request):
+    data = [
+        {
+            'title': '平台上线公告',
+            'content': '<p>欢迎来到 XMMCG 谱面创作竞赛平台！</p>',
+            'time': timezone.now().strftime('%Y-%m-%d %H:%M'),
+            'type': 'success',
+        },
+    ]
+    return Response(data, status=status.HTTP_200_OK)
 
 
 @api_view(['GET', 'POST'])

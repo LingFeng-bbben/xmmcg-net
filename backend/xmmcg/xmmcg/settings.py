@@ -139,6 +139,17 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_CREDENTIALS = True
 
+# CSRF Configuration for SPA
+CSRF_COOKIE_HTTPONLY = False  # 前端需要读取 csrftoken cookie
+CSRF_COOKIE_SAMESITE = 'Lax'  # 开发环境同源
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+]
+CSRF_USE_SESSIONS = False
+
 # REST Framework Configuration
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

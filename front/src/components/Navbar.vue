@@ -14,8 +14,29 @@
     <div class="flex-grow" />
     
     <el-menu-item index="/">首页</el-menu-item>
-    <el-menu-item index="/songs">歌曲</el-menu-item>
-    <el-menu-item index="/charts">谱面</el-menu-item>
+    
+    <!-- 根据阶段权限动态显示菜单项 -->
+    <el-menu-item 
+      index="/songs"
+      :disabled="!pageAccess.songs"
+      :class="{ 'disabled-menu-item': !pageAccess.songs }"
+    >
+      歌曲
+      <el-tooltip v-if="!pageAccess.songs" content="此功能在竞标期开放" placement="bottom">
+        <el-icon size="16" style="margin-left: 4px;"><Warning /></el-icon>
+      </el-tooltip>
+    </el-menu-item>
+    
+    <el-menu-item 
+      index="/charts"
+      :disabled="!pageAccess.charts"
+      :class="{ 'disabled-menu-item': !pageAccess.charts }"
+    >
+      谱面
+      <el-tooltip v-if="!pageAccess.charts" content="此功能在制谱期开放" placement="bottom">
+        <el-icon size="16" style="margin-left: 4px;"><Warning /></el-icon>
+      </el-tooltip>
+    </el-menu-item>
     
     <div class="flex-grow" />
     
@@ -46,10 +67,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Trophy, UserFilled, User, SwitchButton } from '@element-plus/icons-vue'
+import { Trophy, UserFilled, User, SwitchButton, Warning } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useCurrentPhase } from '../router/index.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -58,13 +80,43 @@ const activeIndex = ref('/')
 const username = ref(localStorage.getItem('username') || '')
 const isLoggedIn = computed(() => !!localStorage.getItem('token'))
 
+const pageAccess = ref({
+  home: true,
+  songs: true,
+  charts: true,
+  profile: true
+})
+
 // 监听路由变化，更新激活菜单项
 watch(() => route.path, (newPath) => {
   activeIndex.value = newPath
 }, { immediate: true })
 
+const loadPhasePermissions = async () => {
+  try {
+    const phase = await useCurrentPhase()
+    if (phase?.page_access) {
+      pageAccess.value = phase.page_access
+    }
+  } catch (error) {
+    console.error('加载阶段权限失败:', error)
+  }
+}
+
 const handleSelect = (key) => {
   if (key !== 'user') {
+    // 检查权限
+    const routePermissions = {
+      '/songs': pageAccess.value.songs,
+      '/charts': pageAccess.value.charts,
+      '/profile': pageAccess.value.profile
+    }
+    
+    if (routePermissions[key] === false) {
+      ElMessage.warning('此功能在当前阶段不可用')
+      return
+    }
+    
     router.push(key)
   }
 }
@@ -76,6 +128,14 @@ const handleLogout = () => {
   ElMessage.success('已退出登录')
   router.push('/')
 }
+
+onMounted(() => {
+  loadPhasePermissions()
+  // 每 30 秒刷新权限
+  setInterval(() => {
+    loadPhasePermissions()
+  }, 30000)
+})
 </script>
 
 <style scoped>
@@ -114,6 +174,15 @@ const handleLogout = () => {
 
 .user-menu {
   margin-left: auto;
+}
+
+.disabled-menu-item {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.disabled-menu-item:hover {
+  background-color: transparent !important;
 }
 
 @media (max-width: 768px) {

@@ -2,6 +2,13 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    # ==================== 首页展示数据 ====================
+    path('banners/', views.get_banners, name='banners'),
+    path('announcements/', views.get_announcements, name='announcements'),
+    path('status/', views.get_competition_status, name='competition-status'),
+    path('phases/', views.get_competition_phases, name='competition-phases'),
+    path('phase/current/', views.get_current_phase, name='current-phase'),
+    
     # 根路径：GET 列表，POST 上传
     path('', views.songs_root, name='songs-root'),
     

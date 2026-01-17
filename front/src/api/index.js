@@ -1,13 +1,32 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
+// 简单获取 cookie 的方法
+const getCookie = (name) => {
+  const matches = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)'))
+  return matches ? decodeURIComponent(matches[1]) : null
+}
+
+const csrfSafeMethod = /^(GET|HEAD|OPTIONS|TRACE)$/i
+
+// 获取 API 基础 URL
+const getBaseURL = () => {
+  // 如果在开发环境，使用 window.API_BASE_URL（由 main.js 设置）
+  if (window.API_BASE_URL) {
+    return `${window.API_BASE_URL}/api`
+  }
+  // 回退到相对路径
+  return '/api'
+}
+
 // 创建 axios 实例
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: getBaseURL(),
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json'
-  }
+  },
+  withCredentials: true  // 允许跨域请求包含凭证
 })
 
 // 请求拦截器
@@ -17,6 +36,14 @@ api.interceptors.request.use(
     const token = localStorage.getItem('token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
+    }
+
+    // 非安全方法需要携带 CSRF Token
+    if (!csrfSafeMethod.test(config.method || '')) {
+      const csrfToken = getCookie('csrftoken')
+      if (csrfToken) {
+        config.headers['X-CSRFToken'] = csrfToken
+      }
     }
     return config
   },
@@ -65,6 +92,8 @@ api.interceptors.response.use(
  */
 export const login = async (username, password) => {
   try {
+    // 确保已有 CSRF Token
+    await ensureCsrfToken()
     const response = await api.post('/users/login/', { username, password })
     return response
   } catch (error) {
@@ -75,9 +104,40 @@ export const login = async (username, password) => {
 /**
  * 用户注册
  */
-export const register = async (username, password) => {
+export const register = async (username, email, password, passwordConfirm) => {
   try {
-    const response = await api.post('/users/register/', { username, password })
+    await ensureCsrfToken()
+    const response = await api.post('/users/register/', {
+      username,
+      email,
+      password,
+      password_confirm: passwordConfirm
+    })
+    return response
+  } catch (error) {
+    // 尝试返回后端的详细错误信息
+    if (error.response && error.response.data) {
+      const data = error.response.data
+      // 后端可能返回 {errors: {...}} 或 {message: ''}
+      if (data.errors) {
+        // 将错误对象拍平为字符串
+        const msg = Object.values(data.errors).flat().join('；')
+        throw new Error(msg || '注册失败')
+      }
+      if (data.message) {
+        throw new Error(data.message)
+      }
+    }
+    throw error
+  }
+}
+
+/**
+ * 获取当前登录用户信息
+ */
+export const getUserProfile = async () => {
+  try {
+    const response = await api.get('/users/me/')
     return response
   } catch (error) {
     throw error
@@ -85,14 +145,17 @@ export const register = async (username, password) => {
 }
 
 /**
- * 获取用户信息
+ * 确保已有 CSRF Token（若无则向后端获取并设置 Cookie）
  */
-export const getUserProfile = async () => {
-  try {
-    const response = await api.get('/users/profile/')
-    return response
-  } catch (error) {
-    throw error
+export const ensureCsrfToken = async () => {
+  const csrfToken = getCookie('csrftoken')
+  if (!csrfToken) {
+    try {
+      await api.get('/users/csrf/')
+    } catch (error) {
+      // 忽略错误，交由调用方处理
+      throw error
+    }
   }
 }
 
@@ -115,11 +178,62 @@ export const getSongs = async (params = {}) => {
  */
 export const uploadSong = async (formData) => {
   try {
+    await ensureCsrfToken()
     const response = await api.post('/songs/', formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       }
     })
+    return response
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * 获取当前用户的歌曲列表
+ */
+export const getMySongs = async () => {
+  try {
+    const response = await api.get('/songs/me/')
+    return response
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * 更新歌曲信息
+ */
+export const updateSong = async (songId, data) => {
+  try {
+    await ensureCsrfToken()
+    const response = await api.put(`/songs/${songId}/update/`, data)
+    return response
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * 删除歌曲
+ */
+export const deleteSong = async (songId) => {
+  try {
+    await ensureCsrfToken()
+    const response = await api.delete(`/songs/${songId}/`)
+    return response
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * 获取歌曲详情
+ */
+export const getSongDetail = async (songId) => {
+  try {
+    const response = await api.get(`/songs/detail/${songId}/`)
     return response
   } catch (error) {
     throw error
@@ -141,14 +255,45 @@ export const getBiddingRounds = async () => {
 }
 
 /**
+ * 获取当前用户的竞标列表
+ */
+export const getMyBids = async (roundId) => {
+  try {
+    const params = roundId ? { round_id: roundId } : {}
+    const response = await api.get('/songs/bids/', { params })
+    return response
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
  * 提交竞标
  */
-export const submitBid = async (roundId, songId, amount) => {
+export const submitBid = async (songId, amount, roundId = null) => {
   try {
-    const response = await api.post(`/songs/bidding-rounds/${roundId}/bid/`, {
+    await ensureCsrfToken()
+    const data = {
       song_id: songId,
       amount
-    })
+    }
+    if (roundId) {
+      data.round_id = roundId
+    }
+    const response = await api.post('/songs/bids/', data)
+    return response
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * 获取竞标结果（分配结果）
+ */
+export const getBidResults = async (roundId) => {
+  try {
+    const params = roundId ? { round_id: roundId } : {}
+    const response = await api.get('/songs/bid-results/', { params })
     return response
   } catch (error) {
     throw error
@@ -184,6 +329,42 @@ export const submitChart = async (data) => {
 // ==================== 首页数据 API ====================
 
 /**
+ * 获取 Banner 列表
+ */
+export const getBanners = async () => {
+  try {
+    const response = await api.get('/songs/banners/')
+    return response
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * 获取公告列表
+ */
+export const getAnnouncements = async (limit = 10) => {
+  try {
+    const response = await api.get('/songs/announcements/', { params: { limit } })
+    return response
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * 获取公告列表
+ */
+export const getAnnouncementsFromAPI = async (limit = 10) => {
+  try {
+    const response = await api.get(`/songs/announcements/?limit=${limit}`)
+    return response
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
  * 获取比赛状态
  */
 export const getCompetitionStatus = async () => {
@@ -191,28 +372,53 @@ export const getCompetitionStatus = async () => {
     const response = await api.get('/songs/status/')
     return response
   } catch (error) {
-    // 如果接口不存在，返回模拟数据
     return {
-      currentRound: '第一轮',
-      status: 'active',
-      statusText: '进行中',
+      currentRound: '未开始',
+      status: 'pending',
+      statusText: '待开始',
       participants: 0,
       submissions: 0
     }
   }
 }
 
+// ==================== 比赛阶段 API ====================
+
 /**
- * 获取公告列表
+ * 获取所有比赛阶段
  */
-export const getAnnouncements = async () => {
+export const getCompetitionPhases = async () => {
   try {
-    const response = await api.get('/songs/announcements/')
+    const response = await api.get('/songs/phases/')
     return response
   } catch (error) {
-    // 如果接口不存在，返回空数组
+    console.error('获取比赛阶段失败:', error)
     return []
   }
 }
 
-export default api
+/**
+ * 获取当前活跃阶段
+ */
+export const getCurrentPhase = async () => {
+  try {
+    const response = await api.get('/songs/phase/current/')
+    return response
+  } catch (error) {
+    console.error('获取当前阶段失败:', error)
+    // 返回一个默认的阶段对象
+    return {
+      id: 0,
+      name: '未知阶段',
+      phase_key: 'unknown',
+      status: 'unknown',
+      page_access: {
+        home: true,
+        songs: false,
+        charts: false,
+        profile: true
+      }
+    }
+  }
+}
+

@@ -15,24 +15,171 @@ PEER_REVIEW_TASKS_PER_USER = 8  # 每个用户需要完成的评分任务数
 PEER_REVIEW_MAX_SCORE = 50      # 互评满分（可通过settings配置覆盖）
 
 
+# ==================== Banner 与公告 ====================
+
+class Banner(models.Model):
+    """首页轮换 Banner"""
+    title = models.CharField(max_length=100, help_text='Banner 标题')
+    content = models.TextField(help_text='Banner 描述内容')
+    image_url = models.URLField(null=True, blank=True, help_text='背景图片 URL（可选）')
+    link = models.URLField(null=True, blank=True, help_text='点击跳转链接（可选）')
+    button_text = models.CharField(max_length=50, default='了解更多', help_text='按钮文本')
+    color = models.CharField(max_length=20, default='#409EFF', help_text='背景色')
+    priority = models.IntegerField(default=0, help_text='优先级，越大越靠前')
+    is_active = models.BooleanField(default=True, help_text='是否启用')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Banner'
+        verbose_name_plural = 'Banner'
+        ordering = ['-priority', '-created_at']
+
+    def __str__(self):
+        return f"{self.title} ({'启用' if self.is_active else '禁用'})"
+
+
+class Announcement(models.Model):
+    """首页公告"""
+    CATEGORY_CHOICES = [
+        ('news', '新闻'),
+        ('event', '活动'),
+        ('notice', '通知'),
+    ]
+
+    title = models.CharField(max_length=200, help_text='公告标题')
+    content = models.TextField(help_text='公告内容（支持 Markdown）')
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='news', help_text='公告分类')
+    priority = models.IntegerField(default=0, help_text='优先级，越大越靠前')
+    is_pinned = models.BooleanField(default=False, help_text='是否置顶')
+    is_active = models.BooleanField(default=True, help_text='是否启用')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = '公告'
+        verbose_name_plural = '公告'
+        ordering = ['-is_pinned', '-priority', '-created_at']
+
+    def __str__(self):
+        return f"{self.title} ({'启用' if self.is_active else '禁用'})"
+
+
+# ==================== 比赛阶段管理 ====================
+
+class CompetitionPhase(models.Model):
+    """比赛阶段管理模型（用于时间控制和权限管理）"""
+    
+    # 阶段信息
+    name = models.CharField(max_length=100, help_text='阶段名称，如"竞标期"、"制谱期"')
+    phase_key = models.CharField(
+        max_length=50, 
+        unique=True, 
+        help_text='唯一标识符，用于权限绑定。如 bidding、mapping、peer_review'
+    )
+    description = models.TextField(help_text='阶段描述，显示在主页时间轴')
+    
+    # 时间设置
+    start_time = models.DateTimeField(help_text='阶段开始时间')
+    end_time = models.DateTimeField(help_text='阶段结束时间')
+    
+    # 显示和权限
+    order = models.PositiveIntegerField(default=0, help_text='显示顺序（从小到大）')
+    is_active = models.BooleanField(default=True, help_text='是否启用此阶段')
+    
+    # 页面访问权限配置（JSON 格式）
+    page_access = models.JSONField(
+        default=dict,
+        help_text='页面访问权限配置，如 {"songs": true, "charts": false, "profile": true}（注：首页、登录、注册页总是可访问）'
+    )
+    
+    # 系统字段
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = '比赛阶段'
+        verbose_name_plural = '比赛阶段'
+        ordering = ['order', 'start_time']
+    
+    def __str__(self):
+        return f"{self.name} ({self.phase_key}) - {self.status}"
+    
+    @property
+    def status(self):
+        """
+        实时计算阶段状态
+        - upcoming: 即将开始（当前时间 < 开始时间）
+        - active: 进行中（开始时间 ≤ 当前时间 ≤ 结束时间）
+        - ended: 已结束（当前时间 > 结束时间）
+        """
+        from django.utils import timezone
+        now = timezone.now()
+        if now < self.start_time:
+            return 'upcoming'
+        elif now <= self.end_time:
+            return 'active'
+        else:
+            return 'ended'
+    
+    def get_time_remaining(self):
+        """获取剩余时间字符串"""
+        from django.utils import timezone
+        now = timezone.now()
+        
+        if self.status == 'upcoming':
+            delta = self.start_time - now
+        elif self.status == 'active':
+            delta = self.end_time - now
+        else:
+            return '已结束'
+        
+        days = delta.days
+        hours = delta.seconds // 3600
+        
+        if days > 0:
+            return f'{days} 天 {hours} 小时'
+        else:
+            return f'{hours} 小时'
+    
+    def get_progress_percent(self):
+        """获取阶段进度百分比（进行中返回进度，其他返回 0 或 100）"""
+        from django.utils import timezone
+        now = timezone.now()
+        
+        if self.status == 'upcoming':
+            return 0
+        elif self.status == 'ended':
+            return 100
+        else:
+            # 进行中：计算百分比
+            total_duration = (self.end_time - self.start_time).total_seconds()
+            elapsed = (now - self.start_time).total_seconds()
+            return max(0, min(100, int((elapsed / total_duration) * 100)))
+
+
 def get_audio_filename(instance, filename):
     """
     生成音频文件名
-    格式: audio_user{user_id}_song{song_id}.{ext}
-    例: audio_user1_song5.mp3
+    格式: audio_user{user_id}_{uuid}.{ext}
+    例: audio_user1_a1b2c3d4.mp3
     """
+    import uuid as uuid_lib
     ext = filename.split('.')[-1].lower()
-    return f'songs/audio_user{instance.user.id}_song{instance.id}.{ext}'
+    unique_id = uuid_lib.uuid4().hex[:8]
+    return f'songs/audio_user{instance.user.id}_{unique_id}.{ext}'
 
 
 def get_cover_filename(instance, filename):
     """
     生成封面文件名
-    格式: cover_user{user_id}_song{song_id}.{ext}
-    例: cover_user1_song5.jpg
+    格式: cover_user{user_id}_{uuid}.{ext}
+    例: cover_user1_a1b2c3d4.jpg
     """
+    import uuid as uuid_lib
     ext = filename.split('.')[-1].lower()
-    return f'songs/cover_user{instance.user.id}_song{instance.id}.{ext}'
+    unique_id = uuid_lib.uuid4().hex[:8]
+    return f'songs/cover_user{instance.user.id}_{unique_id}.{ext}'
 
 
 class Song(models.Model):

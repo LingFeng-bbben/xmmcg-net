@@ -4,7 +4,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
-from django.views.decorators.csrf import csrf_exempt
+from django.middleware.csrf import get_token
 
 from .serializers import (
     UserRegistrationSerializer,
@@ -97,11 +97,14 @@ def get_current_user(request):
     """
     user = request.user
     serializer = UserDetailSerializer(user)
-    return Response({
-        'success': True,
-        'user': serializer.data
-    }, status=status.HTTP_200_OK)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def csrf_token_view(request):
+    """返回并设置 CSRF Token，供前端获取。"""
+    token = get_token(request)
+    return Response({'csrfToken': token}, status=status.HTTP_200_OK)
 
 @api_view(['PUT', 'PATCH'])
 @permission_classes([IsAuthenticated])

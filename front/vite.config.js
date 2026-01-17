@@ -15,7 +15,7 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
+        credentials: 'include'  // 确保 Cookie 在代理时被正确转发
       }
     }
   }

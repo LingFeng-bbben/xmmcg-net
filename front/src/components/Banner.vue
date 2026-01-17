@@ -4,9 +4,9 @@
       <div class="banner-item" :style="{ backgroundColor: item.color }">
         <div class="banner-content">
           <h2>{{ item.title }}</h2>
-          <p>{{ item.description }}</p>
+          <p>{{ item.content }}</p>
           <el-button v-if="item.link" type="primary" size="large" @click="handleClick(item.link)">
-            {{ item.buttonText || '了解更多' }}
+            {{ item.button_text || '了解更多' }}
           </el-button>
         </div>
       </div>
@@ -15,40 +15,39 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { getBanners } from '../api'
 
 const router = useRouter()
 
-const banners = ref([
-  {
-    title: '欢迎来到 XMMCG',
-    description: '谱面创作竞赛平台，展现你的创意才华',
-    color: '#409EFF',
-    link: '/songs',
-    buttonText: '开始竞标'
-  },
-  {
-    title: '第一轮竞标进行中',
-    description: '参与歌曲竞标，赢取制谱权利',
-    color: '#67C23A',
-    link: '/charts',
-    buttonText: '查看谱面'
-  },
-  {
-    title: '互评系统',
-    description: '公平公正的评分机制，让优秀作品脱颖而出',
-    color: '#E6A23C',
-    link: '/profile',
-    buttonText: '个人中心'
-  }
-])
+const banners = ref([])
 
 const handleClick = (link) => {
   if (link) {
-    router.push(link)
+    // 检查是否是内部路由
+    if (link.startsWith('/')) {
+      router.push(link)
+    } else {
+      window.open(link, '_blank')
+    }
   }
 }
+
+const fetchBanners = async () => {
+  try {
+    const data = await getBanners()
+    if (data && data.length > 0) {
+      banners.value = data
+    }
+  } catch (error) {
+    console.error('获取 Banner 失败:', error)
+  }
+}
+
+onMounted(() => {
+  fetchBanners()
+})
 </script>
 
 <style scoped>

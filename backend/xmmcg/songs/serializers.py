@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Song
+from .models import Song, Banner, Announcement, CompetitionPhase
 from .utils import (
     calculate_file_hash,
     validate_audio_file,
@@ -106,6 +106,7 @@ class SongDetailSerializer(serializers.ModelSerializer):
 class SongListSerializer(serializers.ModelSerializer):
     """歌曲列表序列化器（返回精简信息）"""
     user = SongUserSerializer(read_only=True)
+    audio_url = serializers.SerializerMethodField()
     cover_url = serializers.SerializerMethodField()
     
     class Meta:
@@ -114,11 +115,19 @@ class SongListSerializer(serializers.ModelSerializer):
             'id',
             'title',
             'user',
+            'audio_url',
             'cover_url',
+            'netease_url',
             'file_size',
             'created_at'
         )
         read_only_fields = fields
+    
+    def get_audio_url(self, obj):
+        """获取音频文件 URL"""
+        if obj.audio_file:
+            return obj.audio_file.url
+        return None
     
     def get_cover_url(self, obj):
         """获取封面文件 URL"""
@@ -382,3 +391,54 @@ class SecondBidResultSerializer(serializers.ModelSerializer):
             'allocation_type', 'allocation_type_display', 'completed_chart_id', 'allocated_at'
         )
         read_only_fields = fields
+
+
+class BannerSerializer(serializers.ModelSerializer):
+    """Banner 序列化器"""
+    class Meta:
+        model = Banner
+        fields = ('id', 'title', 'content', 'image_url', 'link', 'button_text', 'color', 'priority')
+
+
+class AnnouncementSerializer(serializers.ModelSerializer):
+    """公告序列化器"""
+    class Meta:
+        model = Announcement
+        fields = ('id', 'title', 'content', 'category', 'is_pinned', 'created_at', 'updated_at')
+
+
+class CompetitionPhaseSerializer(serializers.ModelSerializer):
+    """比赛阶段序列化器"""
+    status = serializers.SerializerMethodField()
+    time_remaining = serializers.SerializerMethodField()
+    progress_percent = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = CompetitionPhase
+        fields = (
+            'id',
+            'name',
+            'phase_key',
+            'description',
+            'start_time',
+            'end_time',
+            'order',
+            'status',
+            'time_remaining',
+            'progress_percent',
+            'page_access',
+            'is_active',
+        )
+        read_only_fields = ('status', 'time_remaining', 'progress_percent')
+    
+    def get_status(self, obj):
+        """获取阶段状态"""
+        return obj.status
+    
+    def get_time_remaining(self, obj):
+        """获取剩余时间"""
+        return obj.get_time_remaining()
+    
+    def get_progress_percent(self, obj):
+        """获取进度百分比"""
+        return obj.get_progress_percent()

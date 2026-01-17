@@ -71,11 +71,21 @@ class UserLoginSerializer(serializers.Serializer):
 class UserDetailSerializer(serializers.ModelSerializer):
     """用户详情序列化器（获取和修改用户信息）"""
     token = serializers.IntegerField(source='profile.token', read_only=True)
+    songsCount = serializers.SerializerMethodField()
+    chartsCount = serializers.SerializerMethodField()
     
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'is_active', 'date_joined', 'token')
-        read_only_fields = ('id', 'username', 'date_joined', 'token')
+        fields = ('username', 'email', 'is_active', 'date_joined', 'token', 'songsCount', 'chartsCount')
+        read_only_fields = ('username', 'date_joined', 'token', 'songsCount', 'chartsCount')
+    
+    def get_songsCount(self, obj):
+        """获取用户上传的歌曲数量"""
+        return obj.songs.count()
+    
+    def get_chartsCount(self, obj):
+        """获取用户上传的谱面数量"""
+        return obj.charts.count() if hasattr(obj, 'charts') else 0
 
 
 class ChangePasswordSerializer(serializers.Serializer):

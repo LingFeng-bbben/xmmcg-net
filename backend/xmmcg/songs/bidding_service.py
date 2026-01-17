@@ -118,6 +118,9 @@ class BiddingService:
         bidding_round.status = 'completed'
         bidding_round.save()
         
+        # 处理代币扣除
+        token_deduction = BiddingService.process_allocation_tokens(bidding_round.id)
+        
         # 返回统计信息
         return {
             'status': 'success',
@@ -127,6 +130,7 @@ class BiddingService:
             'unallocated_songs': len(unallocated_songs),
             'winners': len(allocated_users),
             'total_bidders': len(bidding_users),
+            'token_deduction': token_deduction,
         }
     
     @staticmethod
@@ -196,6 +200,78 @@ class BiddingService:
         )
         
         return bid
+    
+    @staticmethod
+    @transaction.atomic
+    def process_allocation_tokens(bidding_round_id):
+        """
+        处理竞标分配后的代币扣除
+        
+        逻辑：
+        1. 获取该轮次的所有分配结果
+        2. 对于每个中标的用户，从其代币中扣除竞标金额
+        3. 随机分配的用户（bid_amount=0）不扣除代币
+        4. 返回处理统计
+        
+        Args:
+            bidding_round_id: 竞标轮次ID
+            
+        Returns:
+            dict: 包含代币处理统计信息
+            
+        Raises:
+            ValidationError: 如果处理失败
+        """
+        
+        # 获取竞标轮次
+        try:
+            bidding_round = BiddingRound.objects.get(id=bidding_round_id)
+        except BiddingRound.DoesNotExist:
+            raise ValidationError('竞标轮次不存在')
+        
+        # 获取该轮次的所有分配结果
+        results = BidResult.objects.filter(
+            bidding_round=bidding_round,
+            allocation_type='win'  # 只处理中标的用户
+        ).select_related('user', 'song')
+        
+        total_deducted = 0
+        users_deducted = 0
+        failed_users = []
+        
+        for result in results:
+            try:
+                # 获取或创建用户资料
+                profile, created = UserProfile.objects.get_or_create(user=result.user)
+                
+                # 验证代币足够
+                if profile.token < result.bid_amount:
+                    failed_users.append({
+                        'user': result.user.username,
+                        'required': result.bid_amount,
+                        'available': profile.token
+                    })
+                    continue
+                
+                # 扣除代币
+                profile.token -= result.bid_amount
+                profile.save()
+                
+                total_deducted += result.bid_amount
+                users_deducted += 1
+                
+            except Exception as e:
+                failed_users.append({
+                    'user': result.user.username,
+                    'error': str(e)
+                })
+        
+        return {
+            'total_deducted': total_deducted,
+            'users_deducted': users_deducted,
+            'failed_users': failed_users,
+            'failed_count': len(failed_users),
+        }
     
     @staticmethod
     def get_user_bids(user, bidding_round):

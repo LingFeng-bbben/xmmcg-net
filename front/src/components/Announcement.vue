@@ -11,13 +11,19 @@
       <el-timeline-item
         v-for="(announcement, index) in announcements"
         :key="index"
-        :timestamp="announcement.time"
-        :type="announcement.type"
+        :timestamp="formatTime(announcement.created_at)"
+        :type="getCategoryType(announcement.category)"
         placement="top"
       >
         <el-card :body-style="{ padding: '15px' }">
-          <h4>{{ announcement.title }}</h4>
-          <div class="announcement-content" v-html="announcement.content"></div>
+          <div class="announcement-header">
+            <h4>{{ announcement.title }}</h4>
+            <el-tag v-if="announcement.is_pinned" type="danger" size="small">置顶</el-tag>
+            <el-tag :type="getCategoryTagType(announcement.category)" size="small">
+              {{ getCategoryLabel(announcement.category) }}
+            </el-tag>
+          </div>
+          <div class="announcement-content" v-html="parseMarkdown(announcement.content)"></div>
         </el-card>
       </el-timeline-item>
     </el-timeline>
@@ -29,26 +35,66 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { BellFilled } from '@element-plus/icons-vue'
-import { getAnnouncements } from '../api'
+import { getAnnouncementsFromAPI } from '../api'
+import { marked } from 'marked'
 
-const announcements = ref([
-  {
-    title: '第一轮竞标开始',
-    content: '<p>第一轮歌曲竞标已经开始，请各位选手积极参与！</p><p><strong>注意事项：</strong></p><ul><li>每人最多可竞标5首歌曲</li><li>请合理分配您的代币</li></ul>',
-    time: '2026-01-15 10:00',
-    type: 'primary'
-  },
-  {
-    title: '平台上线公告',
-    content: '<p>欢迎来到 XMMCG 谱面创作竞赛平台！</p><p>本平台支持：</p><ul><li>歌曲上传与管理</li><li>竞标系统</li><li>谱面提交</li><li>互评系统</li></ul>',
-    time: '2026-01-10 14:30',
-    type: 'success'
+const announcements = ref([])
+
+const getCategoryType = (category) => {
+  const typeMap = {
+    'news': 'primary',
+    'event': 'success',
+    'notice': 'warning'
   }
-])
+  return typeMap[category] || 'primary'
+}
+
+const getCategoryTagType = (category) => {
+  const typeMap = {
+    'news': 'info',
+    'event': 'success',
+    'notice': 'warning'
+  }
+  return typeMap[category] || 'info'
+}
+
+const getCategoryLabel = (category) => {
+  const labelMap = {
+    'news': '新闻',
+    'event': '活动',
+    'notice': '通知'
+  }
+  return labelMap[category] || category
+}
+
+const formatTime = (dateString) => {
+  if (!dateString) return ''
+  try {
+    const date = new Date(dateString)
+    return date.toLocaleDateString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  } catch {
+    return dateString
+  }
+}
+
+const parseMarkdown = (markdown) => {
+  if (!markdown) return ''
+  try {
+    return marked(markdown)
+  } catch {
+    return markdown
+  }
+}
 
 const fetchAnnouncements = async () => {
   try {
-    const data = await getAnnouncements()
+    const data = await getAnnouncementsFromAPI(10)
     if (data && data.length > 0) {
       announcements.value = data
     }
@@ -75,18 +121,38 @@ onMounted(() => {
   font-weight: bold;
 }
 
+.announcement-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.announcement-header h4 {
+  margin: 0;
+  flex: 1;
+  color: #303133;
+  font-size: 16px;
+}
+
 .announcement-content {
   color: #606266;
   line-height: 1.6;
+  font-size: 14px;
 }
 
 .announcement-content :deep(p) {
   margin: 8px 0;
 }
 
-.announcement-content :deep(ul) {
+.announcement-content :deep(ul),
+.announcement-content :deep(ol) {
   margin: 8px 0;
   padding-left: 20px;
+}
+
+.announcement-content :deep(li) {
+  margin: 4px 0;
 }
 
 .announcement-content :deep(strong) {
@@ -94,8 +160,31 @@ onMounted(() => {
   font-weight: bold;
 }
 
-.announcement-content :deep(h4) {
-  margin: 10px 0;
-  color: #303133;
+.announcement-content :deep(em) {
+  font-style: italic;
+}
+
+.announcement-content :deep(code) {
+  background-color: #f5f7fa;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+.announcement-content :deep(blockquote) {
+  border-left: 4px solid #409EFF;
+  padding-left: 12px;
+  margin: 8px 0;
+  color: #606266;
+}
+
+.announcement-content :deep(a) {
+  color: #409EFF;
+  text-decoration: none;
+}
+
+.announcement-content :deep(a:hover) {
+  text-decoration: underline;
 }
 </style>

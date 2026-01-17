@@ -43,6 +43,9 @@
           </el-row>
         </el-card>
 
+        <!-- 竞赛阶段日程 -->
+        <PhaseTimeline />
+
         <!-- 公告栏 -->
         <Announcement />
 
@@ -96,6 +99,7 @@ import { useRouter } from 'vue-router'
 import { TrophyBase, Headset, Document, User } from '@element-plus/icons-vue'
 import Banner from '../components/Banner.vue'
 import Announcement from '../components/Announcement.vue'
+import PhaseTimeline from '../components/PhaseTimeline.vue'
 import { getCompetitionStatus } from '../api'
 import { ElMessage } from 'element-plus'
 
