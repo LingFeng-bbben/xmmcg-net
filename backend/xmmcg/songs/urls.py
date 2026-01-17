@@ -23,4 +23,36 @@ urlpatterns = [
     
     # 竞标结果
     path('bid-results/', views.bid_results_view, name='bid-results'),
+    
+    # ==================== 谱面相关路由 ====================
+    path('charts/me/', views.get_user_charts, name='get-user-charts'),
+    path('charts/<int:result_id>/submit/', views.submit_chart, name='submit-chart'),
+    path('charts/<int:chart_id>/reviews/', views.get_chart_reviews, name='get-chart-reviews'),
+    
+    # ==================== 互评相关路由 ====================
+    path('peer-reviews/allocate/<int:round_id>/', views.allocate_peer_reviews, name='allocate-peer-reviews'),
+    path('peer-reviews/tasks/<int:round_id>/', views.get_peer_review_tasks, name='get-peer-review-tasks'),
+    path('peer-reviews/allocations/<int:allocation_id>/submit/', views.submit_peer_review, name='submit-peer-review'),
+    
+    # ==================== 排名相关路由 ====================
+    path('rankings/<int:round_id>/', views.get_round_rankings, name='get-round-rankings'),
+    
+    # ==================== 第二轮竞标相关路由 ====================
+    # 第二轮竞标轮次管理
+    path('second-bidding-rounds/', views.second_bidding_rounds, name='second-bidding-rounds'),
+    
+    # 获取可竞标的一半谱面
+    path('second-bidding-rounds/<int:second_round_id>/available-charts/', views.available_charts_for_second_bidding, name='available-charts'),
+    
+    # 提交第二轮竞标
+    path('second-bids/', views.submit_second_bid, name='submit-second-bid'),
+    
+    # 获取用户的第二轮竞标
+    path('second-bidding-rounds/<int:second_round_id>/my-bids/', views.get_user_second_bids, name='get-user-second-bids'),
+    
+    # 执行第二轮竞标分配（admin）
+    path('second-bidding-rounds/<int:second_round_id>/allocate/', views.allocate_second_bids, name='allocate-second-bids'),
+    
+    # 获取用户的第二轮竞标结果
+    path('second-bidding-rounds/<int:second_round_id>/my-results/', views.get_second_bid_results, name='get-second-bid-results'),
 ]

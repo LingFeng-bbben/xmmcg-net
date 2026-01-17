@@ -4,6 +4,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 from .models import Song, Bid, BiddingRound, BidResult, MAX_SONGS_PER_USER, MAX_BIDS_PER_USER
 from .serializers import (
@@ -511,3 +512,617 @@ def bid_results_view(request):
         'results': results_data
     }, status=status.HTTP_200_OK)
 
+
+# ==================== 谱面相关API ====================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def submit_chart(request, result_id):
+    """
+    提交谱面
+    POST /api/charts/{result_id}/submit/
+    
+    需要参数:
+    - chart_url 或 chart_id_external (至少一个)
+    
+    用户通过竞标获得了歌曲后，可以提交谱面
+    """
+    from .models import BidResult, Chart
+    from .serializers import ChartCreateSerializer, ChartSerializer
+    
+    user = request.user
+    
+    # 验证BidResult存在且属于当前用户
+    bid_result = get_object_or_404(BidResult, id=result_id, user=user)
+    
+    # 检查是否已有谱面（允许覆盖）
+    chart = Chart.objects.filter(
+        user=user,
+        song=bid_result.song,
+        bidding_round=bid_result.bidding_round
+    ).first()
+    
+    # 处理请求数据
+    serializer = ChartCreateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if chart:
+        # 更新现有谱面
+        chart.chart_url = serializer.validated_data.get('chart_url', chart.chart_url)
+        chart.chart_id_external = serializer.validated_data.get('chart_id_external', chart.chart_id_external)
+        chart.status = 'submitted'
+        chart.submitted_at = timezone.now()
+        chart.save()
+    else:
+        # 创建新谱面
+        chart = Chart.objects.create(
+            bidding_round=bid_result.bidding_round,
+            user=user,
+            song=bid_result.song,
+            bid_result=bid_result,
+            status='submitted',
+            chart_url=serializer.validated_data.get('chart_url'),
+            chart_id_external=serializer.validated_data.get('chart_id_external'),
+            submitted_at=timezone.now()
+        )
+    
+    result_serializer = ChartSerializer(chart)
+    return Response({
+        'success': True,
+        'message': '谱面提交成功',
+        'chart': result_serializer.data
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_user_charts(request):
+    """
+    获取当前用户的所有谱面
+    GET /api/charts/me/
+    """
+    from .models import Chart
+    from .serializers import ChartSerializer
+    
+    user = request.user
+    
+    # 获取参数
+    bidding_round_id = request.query_params.get('bidding_round_id')
+    
+    charts = Chart.objects.filter(user=user)
+    
+    if bidding_round_id:
+        charts = charts.filter(bidding_round_id=bidding_round_id)
+    
+    charts = charts.select_related('song', 'bidding_round').order_by('-created_at')
+    
+    serializer = ChartSerializer(charts, many=True)
+    
+    return Response({
+        'success': True,
+        'count': charts.count(),
+        'charts': serializer.data
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def allocate_peer_reviews(request, round_id):
+    """
+    分配互评任务（管理员操作）
+    POST /api/peer-reviews/allocate/{round_id}/
+    
+    参数:
+    - reviews_per_user: 每个用户的评分任务数（默认8）
+    """
+    from .bidding_service import PeerReviewService
+    
+    # 可选：检查是否为管理员
+    # if not request.user.is_staff:
+    #     return Response({
+    #         'success': False,
+    #         'message': '只有管理员可以分配互评任务'
+    #     }, status=status.HTTP_403_FORBIDDEN)
+    
+    reviews_per_user = int(request.data.get('reviews_per_user', 8))
+    
+    try:
+        result = PeerReviewService.allocate_peer_reviews(round_id, reviews_per_user)
+        return Response({
+            'success': True,
+            'message': '互评任务分配成功',
+            'allocation': result
+        }, status=status.HTTP_200_OK)
+    except ValidationError as e:
+        return Response({
+            'success': False,
+            'message': str(e.message) if hasattr(e, 'message') else str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'分配失败: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_peer_review_tasks(request, round_id):
+    """
+    获取当前用户在某轮次需要完成的互评任务
+    GET /api/peer-reviews/tasks/{round_id}/
+    """
+    from .bidding_service import PeerReviewService
+    from .serializers import PeerReviewAllocationSerializer
+    
+    user = request.user
+    
+    try:
+        bidding_round = BiddingRound.objects.get(id=round_id)
+    except BiddingRound.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': '竞标轮次不存在'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    tasks = PeerReviewService.get_user_review_tasks(user, bidding_round)
+    
+    serializer = PeerReviewAllocationSerializer(tasks, many=True)
+    
+    return Response({
+        'success': True,
+        'round': {
+            'id': bidding_round.id,
+            'name': bidding_round.name,
+        },
+        'task_count': tasks.count(),
+        'tasks': serializer.data
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def submit_peer_review(request, allocation_id):
+    """
+    提交互评打分
+    POST /api/peer-reviews/allocations/{allocation_id}/submit/
+    
+    参数:
+    - score: 评分（0-50）
+    - comment: 评论（可选）
+    """
+    from .bidding_service import PeerReviewService
+    from .serializers import PeerReviewSerializer
+    
+    user = request.user
+    score = request.data.get('score')
+    comment = request.data.get('comment', '')
+    
+    # 验证score
+    if score is None:
+        return Response({
+            'success': False,
+            'message': '评分不能为空'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        score = int(score)
+    except (ValueError, TypeError):
+        return Response({
+            'success': False,
+            'message': '评分必须为整数'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # 验证分配任务属于当前用户
+    from .models import PeerReviewAllocation
+    allocation = get_object_or_404(PeerReviewAllocation, id=allocation_id, reviewer=user)
+    
+    try:
+        review = PeerReviewService.submit_peer_review(allocation_id, score, comment)
+        serializer = PeerReviewSerializer(review)
+        return Response({
+            'success': True,
+            'message': '评分提交成功',
+            'review': serializer.data
+        }, status=status.HTTP_201_CREATED)
+    except ValidationError as e:
+        return Response({
+            'success': False,
+            'message': str(e.message) if hasattr(e, 'message') else str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'提交失败: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_chart_reviews(request, chart_id):
+    """
+    获取某个谱面的所有评分结果（匿名）
+    GET /api/charts/{chart_id}/reviews/
+    """
+    from .models import Chart
+    from .serializers import ChartDetailSerializer
+    
+    chart = get_object_or_404(Chart, id=chart_id)
+    
+    serializer = ChartDetailSerializer(chart)
+    
+    return Response({
+        'success': True,
+        'chart': serializer.data
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_round_rankings(request, round_id):
+    """
+    获取某轮次的最终排名（基于平均分）
+    GET /api/rankings/{round_id}/
+    """
+    from .models import Chart
+    
+    try:
+        bidding_round = BiddingRound.objects.get(id=round_id)
+    except BiddingRound.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': '竞标轮次不存在'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    # 获取该轮所有已评分的谱面，按平均分排序
+    charts = Chart.objects.filter(
+        bidding_round=bidding_round,
+        status__in=['reviewed']
+    ).select_related('user', 'song').order_by('-average_score', '-total_score')
+    
+    rankings = []
+    for idx, chart in enumerate(charts, 1):
+        rankings.append({
+            'rank': idx,
+            'username': chart.user.username,
+            'song_title': chart.song.title,
+            'average_score': chart.average_score,
+            'review_count': chart.review_count,
+            'total_score': chart.total_score,
+        })
+    
+    return Response({
+        'success': True,
+        'round': {
+            'id': bidding_round.id,
+            'name': bidding_round.name,
+        },
+        'total': len(rankings),
+        'rankings': rankings
+    }, status=status.HTTP_200_OK)
+
+# ==================== 第二轮竞标API端点 ====================
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def second_bidding_rounds(request):
+    """
+    第二轮竞标轮次管理
+    GET /api/second-bidding-rounds/ - 列出所有第二轮竞标轮次
+    POST /api/second-bidding-rounds/ - 创建新的第二轮竞标轮次（仅admin）
+    """
+    from .models import SecondBiddingRound, BiddingRound
+    from .serializers import SecondBiddingRoundSerializer
+    
+    if request.method == 'GET':
+        # 列出所有第二轮竞标轮次
+        rounds = SecondBiddingRound.objects.all().select_related('bidding_round').order_by('-created_at')
+        
+        serializer = SecondBiddingRoundSerializer(rounds, many=True)
+        
+        return Response({
+            'success': True,
+            'total': rounds.count(),
+            'results': serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    elif request.method == 'POST':
+        # 创建新的第二轮竞标轮次（仅admin）
+        if not request.user.is_staff:
+            return Response({
+                'success': False,
+                'message': '只有管理员可以创建竞标轮次'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        bidding_round_id = request.data.get('bidding_round_id')
+        
+        if not bidding_round_id:
+            return Response({
+                'success': False,
+                'message': '必须指定第一轮竞标轮次ID'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            bidding_round = BiddingRound.objects.get(id=bidding_round_id)
+        except BiddingRound.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': '指定的竞标轮次不存在'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # 检查是否已存在该轮次的第二轮竞标
+        existing = SecondBiddingRound.objects.filter(first_bidding_round=bidding_round).exists()
+        if existing:
+            return Response({
+                'success': False,
+                'message': '该轮次已有对应的第二轮竞标'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 创建第二轮竞标轮次
+        second_round = SecondBiddingRound.objects.create(
+            first_bidding_round=bidding_round,
+            name=f'{bidding_round.name} - Second Round',
+            status='active'
+        )
+        
+        serializer = SecondBiddingRoundSerializer(second_round)
+        
+        return Response({
+            'success': True,
+            'message': '第二轮竞标轮次创建成功',
+            'second_bidding_round': serializer.data
+        }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def available_charts_for_second_bidding(request, second_round_id):
+    """
+    获取可参与第二轮竞标的第一部分谱面列表
+    GET /api/second-bidding-rounds/{round_id}/available-charts/
+    """
+    from .models import SecondBiddingRound
+    from .serializers import AvailableChartSerializer
+    from .bidding_service import SecondBiddingService
+    
+    try:
+        second_round = SecondBiddingRound.objects.get(id=second_round_id)
+    except SecondBiddingRound.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': '第二轮竞标轮次不存在'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    # 获取可竞标的一半谱面
+    available_charts = SecondBiddingService.get_available_part_one_charts(
+        second_round, 
+        user=request.user
+    )
+    
+    # 分页处理
+    page = int(request.query_params.get('page', 1))
+    page_size = int(request.query_params.get('page_size', 10))
+    
+    start = (page - 1) * page_size
+    end = start + page_size
+    
+    total_count = available_charts.count()
+    charts_page = available_charts[start:end]
+    
+    serializer = AvailableChartSerializer(charts_page, many=True)
+    
+    return Response({
+        'success': True,
+        'count': total_count,
+        'page': page,
+        'page_size': page_size,
+        'total_pages': (total_count + page_size - 1) // page_size,
+        'results': serializer.data
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def submit_second_bid(request):
+    """
+    提交第二轮竞标
+    POST /api/second-bids/
+    
+    请求体：
+    {
+        "second_bidding_round_id": 1,
+        "target_chart_part_one_id": 5,
+        "amount": 50
+    }
+    """
+    from .models import SecondBiddingRound, Chart, SecondBid
+    from .serializers import SecondBidSerializer
+    
+    second_round_id = request.data.get('second_bidding_round_id')
+    chart_id = request.data.get('target_chart_part_one_id')
+    amount = request.data.get('amount')
+    
+    if not all([second_round_id, chart_id, amount]):
+        return Response({
+            'success': False,
+            'message': '缺少必要参数'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        second_round = SecondBiddingRound.objects.get(id=second_round_id)
+    except SecondBiddingRound.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': '第二轮竞标轮次不存在'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    try:
+        target_chart = Chart.objects.get(id=chart_id)
+    except Chart.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': '目标谱面不存在'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    if second_round.status != 'active':
+        return Response({
+            'success': False,
+            'message': '该竞标轮次已关闭，无法提交竞标'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # 验证竞标有效性
+    is_valid, error_msg = SecondBiddingService.validate_second_bid(
+        request.user, target_chart, amount
+    )
+    if not is_valid:
+        return Response({
+            'success': False,
+            'message': error_msg
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # 检查是否已对该谱面竞标过
+    existing_bid = SecondBid.objects.filter(
+        second_bidding_round=second_round,
+        user=request.user,
+        target_chart_part_one=target_chart
+    ).first()
+    
+    if existing_bid and not existing_bid.is_dropped:
+        return Response({
+            'success': False,
+            'message': '已对该谱面进行过竞标'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # 创建竞标
+    bid = SecondBid.objects.create(
+        second_bidding_round=second_round,
+        user=request.user,
+        target_chart_part_one=target_chart,
+        amount=int(amount)
+    )
+    
+    serializer = SecondBidSerializer(bid)
+    
+    return Response({
+        'success': True,
+        'message': '竞标提交成功',
+        'bid': serializer.data
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_user_second_bids(request, second_round_id):
+    """
+    获取用户在某个第二轮竞标中的竞标记录
+    GET /api/second-bidding-rounds/{round_id}/my-bids/
+    """
+    from .models import SecondBiddingRound, SecondBid
+    from .serializers import SecondBidSerializer
+    
+    try:
+        second_round = SecondBiddingRound.objects.get(id=second_round_id)
+    except SecondBiddingRound.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': '第二轮竞标轮次不存在'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    # 获取用户的竞标
+    bids = SecondBid.objects.filter(
+        second_bidding_round=second_round,
+        user=request.user
+    ).select_related('target_chart_part_one', 'target_chart_part_one__song').order_by('-created_at')
+    
+    serializer = SecondBidSerializer(bids, many=True)
+    
+    return Response({
+        'success': True,
+        'total': bids.count(),
+        'bids': serializer.data
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def allocate_second_bids(request, second_round_id):
+    """
+    执行第二轮竞标分配（仅admin）
+    POST /api/second-bidding-rounds/{round_id}/allocate/
+    """
+    from .models import SecondBiddingRound
+    from .bidding_service import SecondBiddingService
+    
+    if not request.user.is_staff:
+        return Response({
+            'success': False,
+            'message': '只有管理员可以执行分配'
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        second_round = SecondBiddingRound.objects.get(id=second_round_id)
+    except SecondBiddingRound.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': '第二轮竞标轮次不存在'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    if second_round.status != 'active':
+        return Response({
+            'success': False,
+            'message': '只能对"进行中"的竞标轮次进行分配'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        result = SecondBiddingService.allocate_second_bids(second_round_id)
+        
+        second_round.status = 'completed'
+        second_round.completed_at = timezone.now()
+        second_round.save()
+        
+        return Response({
+            'success': True,
+            'message': '分配完成',
+            'allocation_result': result
+        }, status=status.HTTP_200_OK)
+    
+    except ValidationError as e:
+        return Response({
+            'success': False,
+            'message': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_second_bid_results(request, second_round_id):
+    """
+    获取用户的第二轮竞标分配结果
+    GET /api/second-bidding-rounds/{round_id}/my-results/
+    """
+    from .models import SecondBiddingRound
+    from .serializers import SecondBidResultSerializer
+    from .bidding_service import SecondBiddingService
+    
+    try:
+        second_round = SecondBiddingRound.objects.get(id=second_round_id)
+    except SecondBiddingRound.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': '第二轮竞标轮次不存在'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    # 获取用户的分配结果
+    results = SecondBiddingService.get_second_bid_results(request.user, second_round)
+    
+    serializer = SecondBidResultSerializer(results, many=True)
+    
+    return Response({
+        'success': True,
+        'total': results.count(),
+        'results': serializer.data
+    }, status=status.HTTP_200_OK)
