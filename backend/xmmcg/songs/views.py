@@ -6,6 +6,7 @@ from django.shortcuts import get_object_or_404
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.http import HttpResponse
+from django.conf import settings
 import io
 import zipfile
 import logging
@@ -74,6 +75,8 @@ def get_competition_status(request):
             'statusText': '待开始',
             'participants': 0,
             'submissions': 0,
+            'peer_review_max_score': getattr(settings, 'PEER_REVIEW_MAX_SCORE', 50),
+            'current_round_id': None,  # 没有活跃轮次
         }, status=status.HTTP_200_OK)
     
     # 根据时间判断状态
@@ -115,6 +118,8 @@ def get_competition_status(request):
         'phaseKey': current_phase.phase_key,
         'startTime': current_phase.start_time,
         'endTime': current_phase.end_time,
+        'peer_review_max_score': getattr(settings, 'PEER_REVIEW_MAX_SCORE', 50),  # 互评最大分数
+        'current_round_id': current_phase.id,  # 当前轮次ID
     }, status=status.HTTP_200_OK)
 
 
@@ -1291,34 +1296,22 @@ def allocate_peer_reviews(request, round_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def get_peer_review_tasks(request, round_id):
+def get_peer_review_tasks(request):
     """
-    获取当前用户在某轮次需要完成的互评任务
-    GET /api/peer-reviews/tasks/{round_id}/
+    获取当前用户的所有待完成互评任务
+    GET /api/peer-reviews/tasks/
     """
     from .bidding_service import PeerReviewService
     from .serializers import PeerReviewAllocationSerializer
     
     user = request.user
     
-    try:
-        bidding_round = BiddingRound.objects.get(id=round_id)
-    except BiddingRound.DoesNotExist:
-        return Response({
-            'success': False,
-            'message': '竞标轮次不存在'
-        }, status=status.HTTP_404_NOT_FOUND)
-    
-    tasks = PeerReviewService.get_user_review_tasks(user, bidding_round)
+    tasks = PeerReviewService.get_user_review_tasks(user)
     
     serializer = PeerReviewAllocationSerializer(tasks, many=True)
     
     return Response({
         'success': True,
-        'round': {
-            'id': bidding_round.id,
-            'name': bidding_round.name,
-        },
         'task_count': tasks.count(),
         'tasks': serializer.data
     }, status=status.HTTP_200_OK)
@@ -1394,6 +1387,104 @@ def get_chart_reviews(request, chart_id):
     chart = get_object_or_404(Chart, id=chart_id)
     
     serializer = ChartDetailSerializer(chart, context={'request': request})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def submit_extra_peer_review(request):
+    """
+    提交额外的互评打分（用户自主选择的谱面）
+    POST /api/peer-reviews/extra/
+    
+    参数:
+    - chart_id: 谱面ID
+    - score: 评分（0-最大分数）
+    - comments: 评论（可选）
+    """
+    from .models import Chart, PeerReview, PeerReviewAllocation
+    from .serializers import PeerReviewSerializer
+    from django.conf import settings
+    
+    user = request.user
+    chart_id = request.data.get('chart_id')
+    score = request.data.get('score')
+    comments = request.data.get('comments', '')
+    
+    # 验证参数
+    if not chart_id:
+        return Response({
+            'success': False,
+            'message': '谱面ID不能为空'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if score is None:
+        return Response({
+            'success': False,
+            'message': '评分不能为空'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        score = int(score)
+    except (ValueError, TypeError):
+        return Response({
+            'success': False,
+            'message': '评分必须为整数'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # 获取最大分数配置
+    max_score = getattr(settings, 'PEER_REVIEW_MAX_SCORE', 50)
+    
+    if score < 0 or score > max_score:
+        return Response({
+            'success': False,
+            'message': f'评分必须在0到{max_score}之间'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # 验证谱面存在
+    chart = get_object_or_404(Chart, id=chart_id)
+    
+    # 检查是否是自己的谱面（不允许给自己的谱面评分）
+    if chart.user == user or (chart.completion_bid_result and chart.completion_bid_result.user == user):
+        return Response({
+            'success': False,
+            'message': '不能给自己参与制作的谱面评分'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # 检查是否已经提交过额外评分（防止重复）
+    existing_extra_review = PeerReview.objects.filter(
+        reviewer=user,
+        chart=chart,
+        allocation__isnull=True  # 额外评分没有allocation
+    ).first()
+    
+    if existing_extra_review:
+        # 更新已有的额外评分
+        existing_extra_review.score = score
+        existing_extra_review.comments = comments
+        existing_extra_review.save()
+        
+        serializer = PeerReviewSerializer(existing_extra_review)
+        return Response({
+            'success': True,
+            'message': '额外评分已更新',
+            'review': serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    # 创建新的额外评分（不需要allocation）
+    review = PeerReview.objects.create(
+        chart=chart,
+        reviewer=user,
+        allocation=None,  # 额外评分没有allocation
+        score=score,
+        comments=comments
+    )
+    
+    serializer = PeerReviewSerializer(review)
+    return Response({
+        'success': True,
+        'message': '额外评分提交成功',
+        'review': serializer.data
+    }, status=status.HTTP_201_CREATED)
     
     return Response({
         'success': True,

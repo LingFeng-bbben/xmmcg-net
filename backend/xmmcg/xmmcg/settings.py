@@ -225,3 +225,9 @@ MAJDATA_PASSWD_HASHED = config('MAJDATA_PASSWD_HASHED', default='123')
 # 注意：登录逻辑已迁移到 songs/majdata_service.py
 # 使用方法：from songs.majdata_service import MajdataService
 #          session = MajdataService.get_session()
+
+
+# ========= Peer Review System Settings =========
+# 互评系统配置
+PEER_REVIEW_TASKS_PER_USER = config('PEER_REVIEW_TASKS_PER_USER', default=8, cast=int)  # 每个用户需要完成的评分任务数
+PEER_REVIEW_MAX_SCORE = config('PEER_REVIEW_MAX_SCORE', default=50, cast=int)  # 互评满分

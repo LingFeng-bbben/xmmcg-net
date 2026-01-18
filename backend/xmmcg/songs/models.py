@@ -13,12 +13,10 @@ MAX_BIDS_PER_USER = 5
 # 保底分配需要扣除的代币数量
 RANDOM_ALLOCATION_COST = 200
 
-# 互评系统常量
-PEER_REVIEW_TASKS_PER_USER = 8  # 每个用户需要完成的评分任务数
-PEER_REVIEW_MAX_SCORE = 50      # 互评满分（可通过settings配置覆盖）
-
-# 背景视频常量
-MAX_VIDEO_SIZE_MB = 20          # 背景视频最大文件大小（MB）
+# 互评系统常量（已迁移到settings.py，此处保留用于向后兼容）
+# 推荐：在settings.py中设置 PEER_REVIEW_TASKS_PER_USER 和 PEER_REVIEW_MAX_SCORE
+PEER_REVIEW_TASKS_PER_USER = 8  # 每个用户需要完成的评分任务数（可在settings.py覆盖）
+PEER_REVIEW_MAX_SCORE = 50      # 互评满分（可在settings.py覆盖）
 
 # 背景视频常量
 MAX_VIDEO_SIZE_MB = 20          # 背景视频最大文件大小（MB）
@@ -76,6 +74,16 @@ class Announcement(models.Model):
 
 # ==================== 比赛阶段管理 ====================
 
+def get_default_page_access():
+    """默认页面访问权限配置"""
+    return {
+        "songs": True,
+        "charts": True,
+        "profile": True,
+        "eval": True,
+    }
+
+
 class CompetitionPhase(models.Model):
     """比赛阶段管理模型（用于时间控制和权限管理）"""
     
@@ -112,8 +120,8 @@ class CompetitionPhase(models.Model):
     
     # 页面访问权限配置（JSON 格式）
     page_access = models.JSONField(
-        default=dict,
-        help_text='页面访问权限配置，如 {"songs": true, "charts": false, "profile": true}（注：首页、登录、注册页总是可访问）'
+        default=get_default_page_access,
+        help_text='页面访问权限配置，如 {"songs": true, "charts": false, "profile": true, "eval": true}（注：首页、登录、注册页总是可访问）'
     )
     
     # 系统字段
@@ -587,7 +595,7 @@ class BidResult(models.Model):
         ordering = ['-allocated_at']
     
     def __str__(self):
-        allocation_type_display = dict(self.ALLOCATION_TYPE_CHOICES)[self.allocation_type]
+        allocation_type_display = self.get_allocation_type_display()
         target = self.song.title if self.song else (f"{self.chart.user.username}的谱面" if self.chart else "未知")
         return f"{self.user.username} {allocation_type_display} {target} - {self.bid_amount}代币"
     
@@ -811,7 +819,7 @@ class PeerReviewAllocation(models.Model):
         verbose_name_plural = '互评分配'
         ordering = ['allocated_at']
         # 同一个评分者不能多次评同一个谱面
-        unique_together = ('bidding_round', 'reviewer', 'chart')
+        unique_together = ('reviewer', 'chart')
     
     def __str__(self):
         return f"{self.reviewer.username} -> {self.chart.user.username}的{self.chart.song.title}"
@@ -824,15 +832,10 @@ class PeerReview(models.Model):
     allocation = models.OneToOneField(
         PeerReviewAllocation,
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name='review',
-        help_text='对应的分配任务'
-    )
-    
-    bidding_round = models.ForeignKey(
-        BiddingRound,
-        on_delete=models.CASCADE,
-        related_name='peer_reviews',
-        help_text='所属竞标轮次'
+        help_text='对应的分配任务（系统分配的任务有allocation，额外评分没有）'
     )
     
     reviewer = models.ForeignKey(

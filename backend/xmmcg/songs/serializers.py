@@ -424,13 +424,14 @@ class PeerReviewAllocationSerializer(serializers.ModelSerializer):
     """互评任务序列化器（用于获取待评分任务）"""
     chart_id = serializers.IntegerField(source='chart.id', read_only=True)
     song_title = serializers.CharField(source='chart.song.title', read_only=True)
+    chart_designer = serializers.CharField(source='chart.designer', read_only=True)
     chart_file_url = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     
     class Meta:
         model = PeerReviewAllocation
         fields = (
-            'id', 'chart_id', 'song_title', 'chart_file_url',
+            'id', 'chart_id', 'song_title', 'chart_designer', 'chart_file_url',
             'status', 'status_display', 'allocated_at'
         )
         read_only_fields = fields

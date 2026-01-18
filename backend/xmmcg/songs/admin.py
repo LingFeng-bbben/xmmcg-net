@@ -320,15 +320,15 @@ class ChartAdmin(admin.ModelAdmin):
 
 @admin.register(PeerReviewAllocation)
 class PeerReviewAllocationAdmin(admin.ModelAdmin):
-    list_display = ('id', 'bidding_round', 'reviewer', 'chart', 'status', 'allocated_at')
-    list_filter = ('status', 'bidding_round', 'allocated_at')
+    list_display = ('id', 'reviewer', 'chart', 'status', 'allocated_at')
+    list_filter = ('status', 'allocated_at')
     ordering = ('-allocated_at',)
     search_fields = ('reviewer__username', 'chart__song__title')
     readonly_fields = ('allocated_at',)
     
     fieldsets = (
         ('分配信息', {
-            'fields': ('bidding_round', 'reviewer', 'chart', 'status')
+            'fields': ('reviewer', 'chart', 'status')
         }),
         ('时间', {
             'fields': ('allocated_at',),
@@ -340,14 +340,14 @@ class PeerReviewAllocationAdmin(admin.ModelAdmin):
 @admin.register(PeerReview)
 class PeerReviewAdmin(admin.ModelAdmin):
     list_display = ('id', 'reviewer', 'chart', 'score', 'created_at')
-    list_filter = ('bidding_round', 'created_at')
+    list_filter = ('created_at',)
     ordering = ('-created_at',)
     search_fields = ('reviewer__username', 'chart__song__title')
     readonly_fields = ('created_at',)
     
     fieldsets = (
         ('评分信息', {
-            'fields': ('allocation', 'bidding_round', 'reviewer', 'chart')
+            'fields': ('allocation', 'reviewer', 'chart')
         }),
         ('评分内容', {
             'fields': ('score', 'comment')

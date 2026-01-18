@@ -3,6 +3,7 @@ import { ElMessage } from 'element-plus'
 import Home from '../views/Home.vue'
 import Songs from '../views/Songs.vue'
 import Charts from '../views/Charts.vue'
+import Eval from '../views/Eval.vue'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import Profile from '../views/Profile.vue'
@@ -26,6 +27,12 @@ const routes = [
     name: 'Charts',
     component: Charts,
     meta: { title: '谱面' }
+  },
+  {
+    path: '/eval',
+    name: 'Eval',
+    component: Eval,
+    meta: { title: '评分', requiresAuth: true }
   },
   {
     path: '/login',

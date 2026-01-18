@@ -10,6 +10,7 @@ from django.db.models import Sum
 from django.core.exceptions import ValidationError
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.conf import settings
 from .models import Bid, BidResult, BiddingRound, Song, Chart, MAX_SONGS_PER_USER, RANDOM_ALLOCATION_COST
 from users.models import UserProfile
 
@@ -447,23 +448,27 @@ class PeerReviewService:
     
     @staticmethod
     @transaction.atomic
-    def allocate_peer_reviews(bidding_round_id, reviews_per_user=8):
+    def allocate_peer_reviews(bidding_round_id, reviews_per_user=None):
         """
         为某个竞标轮次分配互评任务
         
         核心需求：
-        1. 每个提交谱面的用户要收到exactly 8个评分
-        2. 每个评分者要评分exactly 8个谱面
-        3. 用户不能评自己的谱面
+        1. 每张谱面收到相同数量的评分
+        2. 每个评分者评分相同数量的谱面
+        3. 用户不能评自己的任何谱面（支持一人多谱场景）
         
         算法（平衡二分图匹配）：
         - 使用贪心算法进行逐步分配
         - 维护每个评分者和谱面的剩余评分数
         - 采用轮转策略保证均衡
         
+        平衡条件：
+        谱面数 × 每谱面评分数 = 评分者数 × 每人评分任务数
+        
         Args:
             bidding_round_id: 竞标轮次ID
-            reviews_per_user: 每个用户的评分任务数（默认8）
+            reviews_per_user: 每个评分者的评分任务数（默认从settings读取PEER_REVIEW_TASKS_PER_USER）
+                            如果谱面数 ≠ 评分者数，会自动计算每谱面的评分数
             
         Returns:
             dict: 包含分配结果统计
@@ -472,6 +477,10 @@ class PeerReviewService:
             ValidationError: 如果条件不足以进行平衡分配
         """
         from .models import Chart, PeerReviewAllocation
+        
+        # 如果未指定，从settings读取默认值
+        if reviews_per_user is None:
+            reviews_per_user = getattr(settings, 'PEER_REVIEW_TASKS_PER_USER', 8)
         
         # 获取竞标轮次
         try:
@@ -483,30 +492,43 @@ class PeerReviewService:
         charts = Chart.objects.filter(
             bidding_round=bidding_round,
             status__in=['submitted', 'under_review', 'reviewed']
-        ).select_related('user', 'song')
+        ).select_related('user', 'song', 'completion_bid_result__user')
         
         if not charts.exists():
             raise ValidationError('该轮次还没有提交的谱面')
         
-        # 获取参与评分的用户（即提交了谱面的用户）
-        reviewers = User.objects.filter(
-            id__in=charts.values_list('user_id', flat=True)
-        ).distinct()
+        # 获取参与评分的用户（所有参与谱面创作的用户）
+        # 包括：第一部分作者 + 第二部分续写者
+        reviewer_ids = set()
+        for chart in charts:
+            reviewer_ids.add(chart.user_id)  # 第一部分作者
+            if chart.completion_bid_result:
+                reviewer_ids.add(chart.completion_bid_result.user_id)  # 第二部分作者
+        
+        reviewers = User.objects.filter(id__in=reviewer_ids)
         
         num_charts = charts.count()
         num_reviewers = reviewers.count()
         
-        # 验证能否进行平衡分配
-        # 理想情况：num_charts * reviews_per_user = num_reviewers * reviews_per_user
-        total_assignments_needed = num_charts * reviews_per_user
+        # 计算平衡分配参数
+        # 平衡条件：num_charts × reviews_per_chart = num_reviewers × reviews_per_user
         total_capacity = num_reviewers * reviews_per_user
         
-        if total_assignments_needed != total_capacity:
+        # 计算每张谱面应该收到的评分数
+        if total_capacity % num_charts != 0:
             raise ValidationError(
                 f'无法进行平衡分配：'
-                f'{num_charts}个谱面 × {reviews_per_user}个评分 = {total_assignments_needed}，'
-                f'但{num_reviewers}个评分者 × {reviews_per_user}个任务 = {total_capacity}'
+                f'{num_reviewers}个评分者 × {reviews_per_user}个任务 = {total_capacity}次评分，'
+                f'无法被{num_charts}张谱面均分（{total_capacity} % {num_charts} = {total_capacity % num_charts}）。'
+                f'建议调整 reviews_per_user 参数。'
             )
+        
+        reviews_per_chart = total_capacity // num_charts
+        total_assignments_needed = num_charts * reviews_per_chart
+        
+        print(f"[互评分配] {num_charts}张谱面，{num_reviewers}个评分者")
+        print(f"[互评分配] 每人评{reviews_per_user}张，每谱面被评{reviews_per_chart}次")
+        print(f"[互评分配] 总分配数：{total_assignments_needed}")
         
         # 清空已有的分配（重新分配）
         PeerReviewAllocation.objects.filter(
@@ -521,15 +543,35 @@ class PeerReviewService:
         chart_review_counts = {chart.id: 0 for chart in charts_list}
         reviewer_task_counts = {reviewer.id: 0 for reviewer in reviewers_list}
         
+        # 建立谱面与其所有参与者的映射（支持两部分合作谱面）
+        # 一张谱面可能有：
+        # 1. 只有第一部分作者（chart.user）
+        # 2. 第一部分作者 + 第二部分作者（chart.user + chart.completion_bid_result.user）
+        chart_contributors_map = {}
+        for chart in charts_list:
+            contributors = {chart.user_id}  # 第一部分作者
+            
+            # 如果有第二部分（续写者），也加入贡献者集合
+            if chart.completion_bid_result:
+                contributors.add(chart.completion_bid_result.user_id)
+            
+            chart_contributors_map[chart.id] = contributors
+        
         # 创建分配记录
         allocations = []
+        
+        # 用集合跟踪已分配的(reviewer_id, chart_id)组合，避免重复
+        assigned_pairs = set()
         
         # 使用循环轮转算法进行分配
         reviewer_idx = 0
         for _ in range(total_assignments_needed):
             # 找到需要被评分的谱面（评分数最少的）
             chart = min(charts_list, key=lambda c: chart_review_counts[c.id])
-            chart_owner_id = chart.user_id
+            
+            # 如果这个谱面已经收到足够的评分，跳过
+            if chart_review_counts[chart.id] >= reviews_per_chart:
+                continue
             
             # 循环找到一个合适的评分者
             found_reviewer = False
@@ -541,35 +583,36 @@ class PeerReviewService:
                 
                 # 检查这个评分者是否满足条件
                 # 1. 没有超过任务数限制
-                # 2. 不是该谱面的所有者
+                # 2. 不是该谱面的任何贡献者（第一部分作者或第二部分续写者）
                 # 3. 还没有评过这个谱面
+                is_contributor = reviewer.id in chart_contributors_map.get(chart.id, set())
+                already_assigned = (reviewer.id, chart.id) in assigned_pairs
+                
                 if (reviewer_task_counts[reviewer.id] < reviews_per_user and
-                    reviewer.id != chart_owner_id):
+                    not is_contributor and
+                    not already_assigned):
                     
-                    # 检查是否已分配过
-                    existing = PeerReviewAllocation.objects.filter(
+                    # 创建分配
+                    allocation = PeerReviewAllocation(
                         bidding_round=bidding_round,
                         reviewer=reviewer,
                         chart=chart
-                    ).exists()
+                    )
+                    allocations.append(allocation)
+                    assigned_pairs.add((reviewer.id, chart.id))
                     
-                    if not existing:
-                        # 创建分配
-                        allocation = PeerReviewAllocation(
-                            bidding_round=bidding_round,
-                            reviewer=reviewer,
-                            chart=chart
-                        )
-                        allocations.append(allocation)
-                        
-                        chart_review_counts[chart.id] += 1
-                        reviewer_task_counts[reviewer.id] += 1
-                        found_reviewer = True
-                        break
+                    chart_review_counts[chart.id] += 1
+                    reviewer_task_counts[reviewer.id] += 1
+                    found_reviewer = True
+                    break
             
             if not found_reviewer:
+                # 提供更详细的错误信息
+                chart_owner = chart.user.username
+                chart_reviews = chart_review_counts[chart.id]
                 raise ValidationError(
-                    f'分配失败：无法为谱面 {chart.id} 找到合适的评分者'
+                    f'分配失败：无法为谱面 {chart.id} (作者:{chart_owner}, 已有{chart_reviews}个评分) 找到合适的评分者。'
+                    f'可能原因：评分者都已达到任务上限或都是该作者的谱面。'
                 )
         
         # 批量创建分配记录
@@ -586,7 +629,7 @@ class PeerReviewService:
             'total_allocations': len(allocations),
             'charts_count': num_charts,
             'reviewers_count': num_reviewers,
-            'reviews_per_chart': reviews_per_user,
+            'reviews_per_chart': reviews_per_chart,
             'tasks_per_reviewer': reviews_per_user,
             'status': 'success'
         }
@@ -642,7 +685,8 @@ class PeerReviewService:
         chart.calculate_average_score()
         
         # 检查该谱面是否已收到所有评分
-        if chart.review_count >= 8:  # PEER_REVIEW_TASKS_PER_USER
+        expected_reviews = getattr(settings, 'PEER_REVIEW_TASKS_PER_USER', 8)
+        if chart.review_count >= expected_reviews:
             chart.status = 'reviewed'
             chart.review_completed_at = review.created_at
             chart.save()
@@ -652,13 +696,12 @@ class PeerReviewService:
         return review
     
     @staticmethod
-    def get_user_review_tasks(user, bidding_round):
+    def get_user_review_tasks(user):
         """
-        获取用户在某轮次要完成的评分任务
+        获取用户的所有待评分任务
         
         Args:
             user: 用户对象
-            bidding_round: 竞标轮次
             
         Returns:
             QuerySet: 用户的待评分任务
@@ -666,10 +709,9 @@ class PeerReviewService:
         from .models import PeerReviewAllocation
         
         return PeerReviewAllocation.objects.filter(
-            bidding_round=bidding_round,
             reviewer=user,
             status='pending'
-        ).select_related('chart', 'chart__user', 'chart__song')
+        ).select_related('chart', 'chart__user', 'chart__song').order_by('-allocated_at')
     
     @staticmethod
     def get_chart_reviews(chart):

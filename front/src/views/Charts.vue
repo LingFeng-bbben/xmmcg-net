@@ -350,7 +350,7 @@
                   下载谱面
                 </el-button>
                 <el-button
-                  v-if="chart.is_part_one"
+                  v-if="chart.is_part_one && chart.status === 'part_submitted'"
                   type="success"
                   size="small"
                   :icon="TrophyBase"

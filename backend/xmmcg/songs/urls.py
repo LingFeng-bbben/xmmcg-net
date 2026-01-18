@@ -43,8 +43,9 @@ urlpatterns = [
     
     # ==================== 互评相关路由 ====================
     path('peer-reviews/allocate/<int:round_id>/', views.allocate_peer_reviews, name='allocate-peer-reviews'),
-    path('peer-reviews/tasks/<int:round_id>/', views.get_peer_review_tasks, name='get-peer-review-tasks'),
+    path('peer-reviews/tasks/', views.get_peer_review_tasks, name='get-peer-review-tasks'),
     path('peer-reviews/allocations/<int:allocation_id>/submit/', views.submit_peer_review, name='submit-peer-review'),
+    path('peer-reviews/extra/', views.submit_extra_peer_review, name='submit-extra-peer-review'),
     
     # ==================== 排名相关路由 ====================
     path('rankings/<int:round_id>/', views.get_round_rankings, name='get-round-rankings'),

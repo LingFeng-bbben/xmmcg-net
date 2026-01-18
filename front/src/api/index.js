@@ -476,3 +476,67 @@ export const getCurrentPhase = async () => {
   }
 }
 
+// ==================== 互评系统相关 API ====================
+
+/**
+ * 获取互评配置（包含最大分数和当前轮次）
+ */
+export const getPeerReviewConfig = async () => {
+  try {
+    const response = await api.get('/songs/status/')
+    return response
+  } catch (error) {
+    console.error('获取互评配置失败:', error)
+    throw error
+  }
+}
+
+/**
+ * 获取我的互评任务列表
+ */
+export const getMyReviewTasks = async () => {
+  try {
+    const response = await api.get('/songs/peer-reviews/tasks/')
+    return response
+  } catch (error) {
+    console.error('获取互评任务失败:', error)
+    throw error
+  }
+}
+
+/**
+ * 提交互评分数
+ */
+export const submitReview = async (allocationId, score, comments = '') => {
+  try {
+    await ensureCsrfToken()
+    const response = await api.post(`/songs/peer-reviews/`, {
+      allocation_id: allocationId,
+      score: score,
+      comments: comments
+    })
+    return response
+  } catch (error) {
+    console.error('提交互评失败:', error)
+    throw error
+  }
+}
+
+/**
+ * 提交额外的互评分数（用户自主选择的谱面）
+ */
+export const submitExtraReview = async (chartId, score, comments = '') => {
+  try {
+    await ensureCsrfToken()
+    const response = await api.post('/songs/peer-reviews/extra/', {
+      chart_id: chartId,
+      score: score,
+      comments: comments
+    })
+    return response
+  } catch (error) {
+    console.error('提交额外互评失败:', error)
+    throw error
+  }
+}
+

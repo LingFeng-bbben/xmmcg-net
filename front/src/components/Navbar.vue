@@ -38,6 +38,17 @@
       </el-tooltip>
     </el-menu-item>
     
+    <el-menu-item 
+      index="/eval"
+      :disabled="!pageAccess.eval"
+      :class="{ 'disabled-menu-item': !pageAccess.eval }"
+    >
+      评分
+      <el-tooltip v-if="!pageAccess.eval" content="此功能在互评期开放" placement="bottom">
+        <el-icon size="16" style="margin-left: 4px;"><Warning /></el-icon>
+      </el-tooltip>
+    </el-menu-item>
+    
     <div class="flex-grow" />
     
     <div v-if="!isLoggedIn" class="auth-buttons">
@@ -84,6 +95,7 @@ const pageAccess = ref({
   home: true,
   songs: true,
   charts: true,
+  eval: true,
   profile: true
 })
 
@@ -109,6 +121,7 @@ const handleSelect = (key) => {
     const routePermissions = {
       '/songs': pageAccess.value.songs,
       '/charts': pageAccess.value.charts,
+      '/eval': pageAccess.value.eval,
       '/profile': pageAccess.value.profile
     }
     
