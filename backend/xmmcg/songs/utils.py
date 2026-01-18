@@ -85,3 +85,33 @@ def validate_title(title: str) -> tuple[bool, str]:
         return False, '歌曲标题过长，最多 100 个字符'
     
     return True, ''
+
+
+def validate_background_video(file: File) -> tuple[bool, str]:
+    """
+    验证背景视频文件
+    
+    Returns:
+        (is_valid, error_message)
+    """
+    if not file:
+        return True, ''  # 视频是可选的
+    
+    # 检查文件大小（最大20MB）
+    max_size = getattr(settings, 'MAX_VIDEO_SIZE_BYTES', 20 * 1024 * 1024)  # 20MB
+    if file.size > max_size:
+        size_mb = max_size / (1024 * 1024)
+        return False, f'背景视频过大，最大允许 {int(size_mb)}MB'
+    
+    # 检查文件扩展名
+    allowed_extensions = getattr(settings, 'ALLOWED_VIDEO_EXTENSIONS', ['mp4'])
+    ext = file.name.split('.')[-1].lower()
+    if ext not in allowed_extensions:
+        return False, f'不支持的视频格式: {ext}，允许的格式: {", ".join(allowed_extensions)}'
+    
+    # 检查文件名是否为 bg.mp4 或 pv.mp4
+    filename = file.name.lower()
+    if not (filename.startswith('bg.') or filename.startswith('pv.')):
+        return False, '背景视频文件名必须以 bg 或 pv 开头（如: bg.mp4, pv.mp4）'
+    
+    return True, ''

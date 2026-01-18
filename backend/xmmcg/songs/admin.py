@@ -18,7 +18,7 @@ class SongAdmin(admin.ModelAdmin):
             'fields': ('user', 'title', 'unique_key')
         }),
         ('媒体文件', {
-            'fields': ('audio_file', 'audio_hash', 'cover_image')
+            'fields': ('audio_file', 'audio_hash', 'cover_image', 'background_video')
         }),
         ('链接', {
             'fields': ('netease_url',)
@@ -98,11 +98,22 @@ class CompetitionPhaseAdmin(admin.ModelAdmin):
 
 @admin.register(BiddingRound)
 class BiddingRoundAdmin(admin.ModelAdmin):
-    list_display = ('name', 'bidding_type', 'competition_phase', 'status', 'created_at', 'started_at', 'completed_at')
+    list_display = ('name', 'bidding_type', 'competition_phase', 'status', 'available_targets_count', 'created_at', 'started_at', 'completed_at')
     list_filter = ('bidding_type', 'status', 'created_at', 'competition_phase')
     ordering = ('-created_at',)
     search_fields = ('name',)
-    actions = ['allocate_bids_action']
+    actions = ['allocate_bids_action', 'auto_create_chart_round_action']
+    
+    def available_targets_count(self, obj):
+        """显示该轮次的可用目标数量"""
+        if obj.bidding_type == 'song':
+            from .models import Song
+            count = Song.objects.count()
+        else:  # chart
+            from .models import Chart
+            count = Chart.objects.filter(status='part_submitted').count()
+        return count
+    available_targets_count.short_description = '可用目标数'
     
     @admin.action(description='分配选中的竞标轮次')
     def allocate_bids_action(self, request, queryset):
@@ -144,7 +155,59 @@ class BiddingRoundAdmin(admin.ModelAdmin):
                 level=messages.WARNING
             )
     
-    readonly_fields = ('created_at',)
+    @admin.action(
+        description='快速创建谱面竞标轮次（自动筛选半成品谱面）',
+        permissions=['add']
+    )
+    def auto_create_chart_round_action(self, request, queryset):
+        """
+        快速创建谱面竞标轮次的管理员操作
+        说明：该操作会自动创建一个新的谱面竞标轮次，并自动筛选所有半成品谱面作为竞标标的
+        注：此 action 无需选择项目，直接点击即可创建
+        """
+        from django.contrib import messages
+        from django.utils import timezone
+        from .models import Chart
+        
+        # 统计半成品谱面
+        half_finished = Chart.objects.filter(status='part_submitted')
+        chart_count = half_finished.count()
+        
+        if chart_count == 0:
+            self.message_user(
+                request,
+                '当前没有半成品谱面可竞标，无法创建谱面竞标轮次',
+                level=messages.WARNING
+            )
+            return
+        
+        try:
+            # 创建新的谱面竞标轮次
+            new_round = BiddingRound.objects.create(
+                name=f'第二轮竞标 - 谱面完成 ({timezone.now().strftime("%Y-%m-%d %H:%M")})',
+                bidding_type='chart',
+                status='active'
+            )
+            
+            self.message_user(
+                request,
+                f'✓ 成功创建谱面竞标轮次 "{new_round.name}"',
+                level=messages.SUCCESS
+            )
+            self.message_user(
+                request,
+                f'✓ 包含 {chart_count} 个半成品谱面作为竞标标的',
+                level=messages.SUCCESS
+            )
+            
+        except Exception as e:
+            self.message_user(
+                request,
+                f'✗ 创建失败: {str(e)}',
+                level=messages.ERROR
+            )
+    
+    readonly_fields = ('created_at', 'available_targets_count')
     
     fieldsets = (
         ('基本信息', {
@@ -153,10 +216,21 @@ class BiddingRoundAdmin(admin.ModelAdmin):
         ('状态管理', {
             'fields': ('status',)
         }),
+        ('统计信息', {
+            'fields': ('available_targets_count',),
+            'description': '显示该轮次可用的竞标目标数量（歌曲或谱面数）'
+        }),
         ('时间信息', {
             'fields': ('started_at', 'completed_at', 'created_at')
         }),
     )
+    
+    def get_actions(self, request):
+        """根据轮次类型动态显示操作"""
+        actions = super().get_actions(request)
+        # 只在列表视图中显示 auto_create_chart_round_action
+        # 在编辑视图中不需要显示
+        return actions
 
 
 @admin.register(Bid)
@@ -199,21 +273,39 @@ class BidResultAdmin(admin.ModelAdmin):
 
 @admin.register(Chart)
 class ChartAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'song', 'status', 'is_part_one', 'review_count', 'average_score', 'created_at')
+    list_display = ('id', 'user', 'song', 'status', 'is_part_one', 'designer', 'review_count', 'average_score', 'created_at')
     list_filter = ('status', 'is_part_one', 'bidding_round', 'created_at')
     ordering = ('-created_at',)
-    search_fields = ('user__username', 'song__title')
+    search_fields = ('user__username', 'song__title', 'designer')
     readonly_fields = ('review_count', 'total_score', 'average_score', 'created_at', 'submitted_at', 'review_completed_at')
+    actions = ['view_available_for_bidding']
+    
+    def view_available_for_bidding(self, request, queryset):
+        """
+        显示哪些谱面可用于竞标（status='part_submitted'）
+        """
+        from django.contrib import messages
+        available = Chart.objects.filter(status='part_submitted')
+        count = available.count()
+        self.message_user(
+            request,
+            f'当前有 {count} 个半成品谱面可用于竞标',
+            level=messages.INFO
+        )
+    view_available_for_bidding.short_description = '查看可竞标的谱面'
     
     fieldsets = (
         ('基本信息', {
             'fields': ('bidding_round', 'user', 'song', 'bid_result')
         }),
-        ('谱面文件', {
-            'fields': ('chart_file', 'status')
+        ('谱面信息', {
+            'fields': ('designer', 'chart_file')
         }),
-        ('部分信息', {
-            'fields': ('is_part_one', 'part_one_chart', 'completion_bid_result')
+        ('媒体文件', {
+            'fields': ('audio_file', 'cover_image')
+        }),
+        ('状态', {
+            'fields': ('status', 'is_part_one', 'part_one_chart', 'completion_bid_result')
         }),
         ('评分统计', {
             'fields': ('review_count', 'total_score', 'average_score'),

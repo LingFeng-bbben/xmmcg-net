@@ -261,9 +261,13 @@ class BiddingService:
         if amount <= 0:
             raise ValidationError('竞标金额必须大于0')
         
-        # 对于谱面竞标，验证不能竞标自己的谱面
-        if chart and chart.user == user:
-            raise ValidationError('不能竞标自己的谱面')
+        # # 对于谱面竞标，验证不能竞标自己的谱面  修改：我们现在允许竞标自己的
+        # if chart and chart.user == user:
+        #     raise ValidationError('不能竞标自己的谱面')
+        
+        # 对于谱面竞标，验证谱面状态必须是 part_submitted（半成品）
+        if chart and chart.status != 'part_submitted':
+            raise ValidationError(f'只能竞标半成品谱面，该谱面当前状态为：{chart.get_status_display()}')
         
         # 验证用户在该轮次的竞标数量
         bid_count = Bid.objects.filter(

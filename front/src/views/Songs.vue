@@ -72,6 +72,26 @@
               </el-upload>
             </el-form-item>
 
+            <el-form-item label="背景视频" prop="backgroundVideo">
+              <el-upload
+                ref="videoUploadRef"
+                :auto-upload="false"
+                :limit="1"
+                :on-change="handleVideoChange"
+                :on-remove="handleVideoRemove"
+                accept=".mp4"
+                :file-list="videoFileList"
+                list-type="text"
+              >
+                <el-button :icon="VideoCamera">选择视频</el-button>
+                <template #tip>
+                  <div class="el-upload__tip">
+                    仅支持 MP4 格式，文件名需为 bg.mp4 或 pv.mp4，文件大小不超过 20MB（可选）
+                  </div>
+                </template>
+              </el-upload>
+            </el-form-item>
+
             <el-form-item label="歌曲链接" prop="neteaseUrl">
               <el-input 
                 v-model="uploadForm.neteaseUrl" 
@@ -165,7 +185,7 @@
                   {{ formatDate(row.created_at) }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="120" align="center">
+              <el-table-column label="操作" width="150" align="center">
                 <template #default="{ row }">
                   <el-button
                     v-if="row.status === 'won'"
@@ -176,7 +196,15 @@
                   >
                     下载
                   </el-button>
-                  <span v-else style="color: #ccc; font-size: 12px;">-</span>
+                  <el-button
+                    v-if="row.status === 'bidding'"
+                    type="danger"
+                    size="small"
+                    @click="handleWithdrawBid(row)"
+                  >
+                    撤回
+                  </el-button>
+                  <span v-else-if="row.status !== 'won'" style="color: #ccc; font-size: 12px;">-</span>
                 </template>
               </el-table-column>
             </el-table>
@@ -266,14 +294,21 @@
                 </div>
 
                 <div v-show="expandedSongs.includes(song.id)" class="list-actions">
-                  <el-button 
-                    type="primary" 
-                    size="small"
-                    :icon="Download"
-                    @click="downloadSong(song)"
-                  >
-                    下载
-                  </el-button>
+                  <el-dropdown @command="(command) => handleDownloadCommand(command, song)">
+                    <el-button 
+                      type="primary" 
+                      size="small"
+                      :icon="Download"
+                    >
+                      下载 <el-icon class="el-icon--right"><arrow-down /></el-icon>
+                    </el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item command="audio">仅下载音频</el-dropdown-item>
+                            <el-dropdown-item command="package">下载歌曲包（音频+封面+视频）</el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
                   <template v-if="isMyOwnSong(song)">
                     <el-button 
                       type="warning" 
@@ -342,13 +377,20 @@
                     </div>
 
                     <div class="detail-actions">
-                      <el-button 
-                        type="primary" 
-                        :icon="Download"
-                        @click="downloadSong(song)"
-                      >
-                        下载音频
-                      </el-button>
+                      <el-dropdown @command="(command) => handleDownloadCommand(command, song)">
+                        <el-button 
+                          type="primary" 
+                          :icon="Download"
+                        >
+                          下载 <el-icon class="el-icon--right"><arrow-down /></el-icon>
+                        </el-button>
+                        <template #dropdown>
+                          <el-dropdown-menu>
+                            <el-dropdown-item command="audio">仅下载音频</el-dropdown-item>
+                            <el-dropdown-item command="package">下载歌曲包（音频+封面+视频）</el-dropdown-item>
+                          </el-dropdown-menu>
+                        </template>
+                      </el-dropdown>
                       
                       <!-- 如果是自己的歌曲，显示管理按钮 -->
                       <template v-if="isMyOwnSong(song)">
@@ -456,7 +498,6 @@
           <el-input-number
             v-model="bidForm.amount"
             :min="1"
-            :max="Math.max(1, userToken)"
             placeholder="输入竞标金额"
             style="width: 100%"
           />
@@ -498,12 +539,14 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
-  Upload, Picture, Headset, TrophyBase, Refresh, Search, 
-  Download, Edit, Delete, User, CaretRight, CaretBottom, Clock, Link 
+  Upload, Picture, VideoCamera, Headset, TrophyBase, Refresh, Search, 
+  Download, Edit, Delete, User, CaretRight, CaretBottom, Clock, Link, ArrowDown
 } from '@element-plus/icons-vue'
+import JSZip from 'jszip'
+import { saveAs } from 'file-saver'
 import { 
   getSongs, uploadSong, getMySongs, updateSong, deleteSong,
-  getMyBids, getBiddingRounds, submitBid, getUserProfile
+  getMyBids, getBiddingRounds, submitBid, getUserProfile, deleteBid
 } from '@/api'
 import { parseBlob } from 'music-metadata'
 
@@ -520,10 +563,13 @@ const uploadForm = ref({
   title: '',
   audioFile: null,
   coverImage: null,
+  backgroundVideo: null,
   neteaseUrl: ''
 })
 const audioFileList = ref([])
 const coverFileList = ref([])
+const videoFileList = ref([])
+const videoUploadRef = ref(null)
 
 // 验证URL格式
 const validateUrl = (rule, value, callback) => {
@@ -719,6 +765,39 @@ const handleCoverRemove = () => {
   coverFileList.value = []
 }
 
+const handleVideoChange = (file) => {
+  // 验证文件大小（20MB）
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.error('背景视频大小不能超过 20MB')
+    videoFileList.value = []
+    uploadForm.value.backgroundVideo = null
+    return
+  }
+  // 验证文件格式
+  const ext = file.name.split('.').pop().toLowerCase()
+  if (ext !== 'mp4') {
+    ElMessage.error('仅支持 MP4 格式')
+    videoFileList.value = []
+    uploadForm.value.backgroundVideo = null
+    return
+  }
+  // 验证文件名
+  const filename = file.name.toLowerCase()
+  if (!filename.startsWith('bg.') && !filename.startsWith('pv.')) {
+    ElMessage.error('视频文件名必须以 bg 或 pv 开头（如: bg.mp4, pv.mp4）')
+    videoFileList.value = []
+    uploadForm.value.backgroundVideo = null
+    return
+  }
+  uploadForm.value.backgroundVideo = file.raw
+  videoFileList.value = [file]
+}
+
+const handleVideoRemove = () => {
+  uploadForm.value.backgroundVideo = null
+  videoFileList.value = []
+}
+
 // 上传歌曲
 const handleUpload = async () => {
   if (!uploadFormRef.value) return
@@ -740,6 +819,9 @@ const handleUpload = async () => {
       formData.append('audio_file', uploadForm.value.audioFile)
       if (uploadForm.value.coverImage) {
         formData.append('cover_image', uploadForm.value.coverImage)
+      }
+      if (uploadForm.value.backgroundVideo) {
+        formData.append('background_video', uploadForm.value.backgroundVideo)
       }
       if (uploadForm.value.neteaseUrl) {
         formData.append('netease_url', uploadForm.value.neteaseUrl)
@@ -773,10 +855,12 @@ const resetUploadForm = () => {
     title: '',
     audioFile: null,
     coverImage: null,
+    backgroundVideo: null,
     neteaseUrl: ''
   }
   audioFileList.value = []
   coverFileList.value = []
+  videoFileList.value = []
   showTitleField.value = false
   uploadFormRef.value?.resetFields()
 }
@@ -798,11 +882,49 @@ const loadMySongs = async () => {
 const loadMyBids = async () => {
   bidsLoading.value = true
   try {
-    const response = await getMyBids()
+    // 先获取竞标轮次
+    const roundsResponse = await getBiddingRounds()
+    if (!roundsResponse.success || !roundsResponse.rounds.length) {
+      console.warn('无法获取竞标轮次')
+      return
+    }
+    
+    // 找最新的歌曲竞标轮次（优先活跃，其次已完成以显示分配结果）
+    let targetSongRound = roundsResponse.rounds.find(r => r.status === 'active' && r.bidding_type === 'song')
+    if (!targetSongRound) {
+      // 没有活跃的，则查找最新的已完成轮次（用于显示分配结果）
+      const completedSongRounds = roundsResponse.rounds.filter(r => r.status === 'completed' && r.bidding_type === 'song')
+      if (completedSongRounds.length > 0) {
+        targetSongRound = completedSongRounds[0]  // 已排序，第一个是最新的
+      }
+    }
+    
+    if (!targetSongRound) {
+      console.log('当前没有活跃或已完成的歌曲竞标轮次')
+      currentBidRound.value = null
+      myBids.value = []
+      return
+    }
+    
+    // 获取该轮次的竞标
+    const response = await getMyBids(targetSongRound.id)
     if (response.success) {
-      currentBidRound.value = response.round || null
+      currentBidRound.value = response.round || activeSongRound
       myBids.value = response.bids || []
       maxBids.value = response.max_bids || 5
+      
+      // 调试日志：显示每个竞标的状态
+      console.log('加载歌曲竞标成功，总数:', myBids.value.length)
+      myBids.value.forEach((bid, idx) => {
+        console.log(`竞标 ${idx + 1}:`, {
+          id: bid.id,
+          song_id: bid.song?.id,
+          song_title: bid.song?.title,
+          amount: bid.amount,
+          status: bid.status,
+          bid_type: bid.bid_type
+        })
+      })
     }
   } catch (error) {
     console.error('加载竞标失败:', error)
@@ -842,43 +964,103 @@ const toggleExpand = (songId) => {
   }
 }
 
+// 将相对路径转换为完整 URL
+const resolveUrl = (url) => {
+  if (!url) return null
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  try {
+    return new URL(url, window.API_BASE_URL || `${window.location.protocol}//${window.location.hostname}:8000`).href
+  } catch (e) {
+    console.error('URL 转换失败:', e)
+    return url
+  }
+}
+
+// 清理文件名中的非法字符
+const sanitizeFilename = (name) => {
+  return name.replace(/[\\/:*?"<>|]/g, '_').trim() || 'song'
+}
+
+// 从 URL 推断扩展名
+const getExtFromUrl = (url, fallback) => {
+  try {
+    const pathname = new URL(url, window.location.origin).pathname
+    const idx = pathname.lastIndexOf('.')
+    if (idx !== -1) return pathname.substring(idx + 1).split('?')[0].toLowerCase()
+  } catch (e) {}
+  return fallback
+}
+
 // 下载歌曲
-const downloadSong = (song) => {
+const downloadSong = async (song) => {
   if (!song.audio_url) {
     ElMessage.error('音频文件不可用')
     return
   }
-  
-  // 获取完整的音频 URL
-  let audioUrl = song.audio_url
-  if (!audioUrl.startsWith('http://') && !audioUrl.startsWith('https://')) {
-    audioUrl = new URL(audioUrl, window.API_BASE_URL || `${window.location.protocol}//${window.location.hostname}:8000`).href
+
+  try {
+    const audioUrl = resolveUrl(song.audio_url)
+    const response = await fetch(audioUrl, { credentials: 'include' })
+    if (!response.ok) throw new Error(`音频下载失败: ${response.status}`)
+    const blob = await response.blob()
+    saveAs(blob, 'track.mp3')
+    ElMessage.success('音频下载成功')
+  } catch (error) {
+    console.error('下载失败:', error)
+    ElMessage.error('音频下载失败')
   }
-  
-  console.log('下载音频:', audioUrl)
-  
-  // 使用 fetch 下载文件，这样可以改变文件名
-  fetch(audioUrl)
-    .then(response => {
-      if (!response.ok) throw new Error('音频下载失败')
-      return response.blob()
-    })
-    .then(blob => {
-      // 创建下载链接
-      const downloadUrl = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = downloadUrl
-      link.download = 'track.mp3'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(downloadUrl)
-      ElMessage.success('音频下载成功')
-    })
-    .catch(error => {
-      console.error('下载失败:', error)
-      ElMessage.error('音频下载失败')
-    })
+}
+
+// 处理下载命令
+const handleDownloadCommand = (command, song) => {
+  if (command === 'audio') {
+    downloadSong(song)
+  } else if (command === 'package') {
+    downloadSongPackage(song)
+  }
+}
+
+// 下载歌曲包（音频+封面+视频）
+const downloadSongPackage = async (song) => {
+  try {
+    ElMessage.info('正在准备下载歌曲包，请稍候...')
+
+    const zip = new JSZip()
+
+    const fetchAndAdd = async (url, filename, optional = false) => {
+      if (!url) return
+      try {
+        const fullUrl = resolveUrl(url)
+        const res = await fetch(fullUrl, { credentials: 'include' })
+        if (!res.ok) throw new Error(`下载失败: ${res.status}`)
+        const blob = await res.blob()
+        zip.file(filename, blob)
+      } catch (err) {
+        console.warn(`文件下载失败(${filename}):`, err)
+        if (!optional) throw err
+      }
+    }
+
+    await fetchAndAdd(song.audio_url, 'track.mp3')
+
+    if (song.cover_url) {
+      const ext = getExtFromUrl(song.cover_url, 'jpg')
+      await fetchAndAdd(song.cover_url, `bg.${ext}`, true)
+    }
+
+    if (song.video_url) {
+      const videoName = song.video_url.toLowerCase().includes('bg') ? 'bg.mp4' : 'pv.mp4'
+      await fetchAndAdd(song.video_url, videoName, true)
+    }
+
+    const content = await zip.generateAsync({ type: 'blob' })
+    const zipName = `${sanitizeFilename(song.title || 'song')}_歌曲包.zip`
+    saveAs(content, zipName)
+    ElMessage.success('歌曲包下载成功')
+  } catch (error) {
+    console.error('打包下载失败:', error)
+    ElMessage.error('打包下载失败')
+  }
 }
 
 // 打开网易云链接
@@ -895,10 +1077,10 @@ const showBidDialog = async (song) => {
     // 获取竞标轮次（从 CompetitionPhase 获取）
     const roundsResponse = await getBiddingRounds()
     if (roundsResponse.success && roundsResponse.rounds.length > 0) {
-      // 找活跃的竞标阶段
-      const activeRound = roundsResponse.rounds.find(r => r.status === 'active')
+      // 找活跃的歌曲竞标阶段（bidding_type='song'）
+      const activeRound = roundsResponse.rounds.find(r => r.status === 'active' && r.bidding_type === 'song')
       if (!activeRound) {
-        ElMessage.warning('当前没有活跃的竞标轮次')
+        ElMessage.warning('当前没有活跃的歌曲竞标轮次')
         return
       }
       currentRound.value = activeRound
@@ -970,6 +1152,34 @@ const handleSubmitBid = async () => {
   } finally {
     bidSubmitting.value = false
   }
+}
+
+const handleWithdrawBid = async (bid) => {
+  ElMessageBox.confirm(
+    `确定要撤回对「${bid.song.title}」的竞标（${bid.amount} Token）吗？`,
+    '撤回竞标',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  )
+    .then(async () => {
+      try {
+        const response = await deleteBid(bid.id)
+        if (response.success) {
+          ElMessage.success('竞标已撤回')
+          // 刷新竞标列表
+          await loadMyBids()
+        }
+      } catch (error) {
+        console.error('撤回竞标失败:', error)
+        ElMessage.error(error.response?.data?.message || '撤回竞标失败')
+      }
+    })
+    .catch(() => {
+      // 用户取消
+    })
 }
 
 // 判断是否是自己的歌曲

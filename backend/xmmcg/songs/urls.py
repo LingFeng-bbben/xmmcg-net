@@ -23,9 +23,12 @@ urlpatterns = [
     # ==================== 竞标相关路由 ====================
     # 竞标轮次管理
     path('bidding-rounds/', views.bidding_rounds_root, name='bidding-rounds-root'),
+    path('bidding-rounds/<int:round_id>/available-charts/', views.get_available_charts_for_round, name='available-charts'),
+    path('bidding-rounds/auto-create-chart-round/', views.auto_create_chart_bidding_round, name='auto-create-chart-round'),
     
     # 用户竞标管理
     path('bids/', views.user_bids_root, name='user-bids-root'),
+    path('bids/<int:bid_id>/', views.delete_bid_view, name='delete-bid'),
     path('bids/allocate/', views.allocate_bids_view, name='allocate-bids'),
     
     # 竞标结果

@@ -291,6 +291,19 @@ export const submitBid = async ({ songId = null, chartId = null, amount, roundId
 }
 
 /**
+ * 撤回竞标
+ */
+export const deleteBid = async (bidId) => {
+  try {
+    await ensureCsrfToken()
+    const response = await api.delete(`/songs/bids/${bidId}/`)
+    return response
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
  * 获取竞标结果（分配结果）
  */
 export const getBidResults = async (roundId) => {

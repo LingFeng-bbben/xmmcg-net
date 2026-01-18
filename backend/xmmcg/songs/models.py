@@ -17,6 +17,12 @@ RANDOM_ALLOCATION_COST = 200
 PEER_REVIEW_TASKS_PER_USER = 8  # 每个用户需要完成的评分任务数
 PEER_REVIEW_MAX_SCORE = 50      # 互评满分（可通过settings配置覆盖）
 
+# 背景视频常量
+MAX_VIDEO_SIZE_MB = 20          # 背景视频最大文件大小（MB）
+
+# 背景视频常量
+MAX_VIDEO_SIZE_MB = 20          # 背景视频最大文件大小（MB）
+
 
 # ==================== Banner 与公告 ====================
 
@@ -199,6 +205,18 @@ def get_cover_filename(instance, filename):
     return f'songs/cover_user{instance.user.id}_{unique_id}.{ext}'
 
 
+def get_video_filename(instance, filename):
+    """
+    生成背景视频文件名
+    格式: video_user{user_id}_{uuid}.{ext}
+    例: video_user1_a1b2c3d4.mp4
+    """
+    import uuid as uuid_lib
+    ext = filename.split('.')[-1].lower()
+    unique_id = uuid_lib.uuid4().hex[:8]
+    return f'songs/video_user{instance.user.id}_{unique_id}.{ext}'
+
+
 def get_chart_filename(instance, filename):
     """
     生成谱面文件名（固定为maidata.txt）
@@ -224,6 +242,14 @@ def get_chart_cover_filename(instance, filename):
     ext = filename.split('.')[-1].lower()
     unique_id = uuid_lib.uuid4().hex[:8]
     return f'charts/cover_user{instance.user.id}_song{instance.song.id}_{unique_id}.{ext}'
+
+
+def get_chart_video_filename(instance, filename):
+    """生成谱面背景视频文件名"""
+    import uuid as uuid_lib
+    ext = filename.split('.')[-1].lower()
+    unique_id = uuid_lib.uuid4().hex[:8]
+    return f'charts/video_user{instance.user.id}_song{instance.song.id}_{unique_id}.{ext}'
 
 
 class Song(models.Model):
@@ -260,6 +286,12 @@ class Song(models.Model):
         null=True,
         blank=True,
         help_text='封面图片（可选）'
+    )
+    background_video = models.FileField(
+        upload_to=get_video_filename,
+        null=True,
+        blank=True,
+        help_text='背景视频（bg.mp4或pv.mp4，最大20MB，可选）'
     )
     netease_url = models.URLField(
         null=True,
@@ -301,6 +333,8 @@ class Song(models.Model):
             self.audio_file.delete(save=False)
         if self.cover_image:
             self.cover_image.delete(save=False)
+        if self.background_video:
+            self.background_video.delete(save=False)
         super().delete(*args, **kwargs)
 
 
@@ -638,6 +672,12 @@ class Chart(models.Model):
         blank=True,
         help_text='谱面封面图片'
     )
+    background_video = models.FileField(
+        upload_to=get_chart_video_filename,
+        null=True,
+        blank=True,
+        help_text='谱面背景视频（可选）'
+    )
     
     # 谱面文件（本地托管，文件名固定为maidata.txt）
     chart_file = models.FileField(
@@ -718,11 +758,9 @@ class Chart(models.Model):
             self.audio_file.delete(save=False)
         if self.cover_image:
             self.cover_image.delete(save=False)
-        if self.review_count == 0:
-            self.average_score = 0.0
-        else:
-            self.average_score = round(self.total_score / self.review_count, 2)
-        self.save()
+        if self.background_video:
+            self.background_video.delete(save=False)
+        super().delete(*args, **kwargs)
 
 
 class PeerReviewAllocation(models.Model):

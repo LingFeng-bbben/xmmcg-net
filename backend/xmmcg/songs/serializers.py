@@ -6,6 +6,7 @@ from .utils import (
     calculate_file_hash,
     validate_audio_file,
     validate_cover_image,
+    validate_background_video,
     validate_title
 )
 
@@ -23,11 +24,12 @@ class SongUploadSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Song
-        fields = ('title', 'audio_file', 'cover_image', 'netease_url')
+        fields = ('title', 'audio_file', 'cover_image', 'background_video', 'netease_url')
         extra_kwargs = {
             'title': {'required': True},
             'audio_file': {'required': True},
             'cover_image': {'required': False},
+            'background_video': {'required': False},
             'netease_url': {'required': False},
         }
     
@@ -53,6 +55,13 @@ class SongUploadSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(error_msg)
         return value
     
+    def validate_background_video(self, value):
+        """验证背景视频"""
+        is_valid, error_msg = validate_background_video(value)
+        if not is_valid:
+            raise serializers.ValidationError(error_msg)
+        return value
+    
     def create(self, validated_data):
         """创建歌曲"""
         user = self.context['request'].user
@@ -75,6 +84,7 @@ class SongDetailSerializer(serializers.ModelSerializer):
     user = SongUserSerializer(read_only=True)
     audio_url = serializers.SerializerMethodField()
     cover_url = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
     
     class Meta:
         model = Song
@@ -84,6 +94,7 @@ class SongDetailSerializer(serializers.ModelSerializer):
             'user',
             'audio_url',
             'cover_url',
+            'video_url',
             'netease_url',
             'file_size',
             'created_at',
@@ -103,12 +114,19 @@ class SongDetailSerializer(serializers.ModelSerializer):
             return obj.cover_image.url
         return None
 
+    def get_video_url(self, obj):
+        """获取背景视频文件 URL"""
+        if obj.background_video:
+            return obj.background_video.url
+        return None
+
 
 class SongListSerializer(serializers.ModelSerializer):
     """歌曲列表序列化器（返回精简信息）"""
     user = SongUserSerializer(read_only=True)
     audio_url = serializers.SerializerMethodField()
     cover_url = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
     
     class Meta:
         model = Song
@@ -118,6 +136,7 @@ class SongListSerializer(serializers.ModelSerializer):
             'user',
             'audio_url',
             'cover_url',
+            'video_url',
             'netease_url',
             'file_size',
             'created_at'
@@ -134,6 +153,12 @@ class SongListSerializer(serializers.ModelSerializer):
         """获取封面文件 URL"""
         if obj.cover_image:
             return obj.cover_image.url
+        return None
+    
+    def get_video_url(self, obj):
+        """获取背景视频文件 URL"""
+        if obj.background_video:
+            return obj.background_video.url
         return None
 
 
@@ -185,7 +210,10 @@ class BidSerializer(serializers.ModelSerializer):
         if obj.chart:
             return {
                 'id': obj.chart.id,
-                'song_title': obj.chart.song.title,
+                'song': {
+                    'id': obj.chart.song.id,
+                    'title': obj.chart.song.title
+                },
                 'creator_username': obj.chart.user.username,
                 'average_score': obj.chart.average_score,
                 'created_at': obj.chart.created_at
@@ -242,7 +270,10 @@ class BidResultSerializer(serializers.ModelSerializer):
         if obj.chart:
             return {
                 'id': obj.chart.id,
-                'song_title': obj.chart.song.title,
+                'song': {
+                    'id': obj.chart.song.id,
+                    'title': obj.chart.song.title
+                },
                 'creator_username': obj.chart.user.username,
                 'average_score': obj.chart.average_score,
                 'created_at': obj.chart.created_at
@@ -263,14 +294,18 @@ class ChartSerializer(serializers.ModelSerializer):
     chart_file_url = serializers.SerializerMethodField()
     audio_url = serializers.SerializerMethodField()
     cover_url = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
     designer = serializers.CharField(read_only=True)
+    part_one_chart = serializers.SerializerMethodField()
+    completion_bid_result = serializers.SerializerMethodField()
     
     class Meta:
         model = Chart
         fields = (
             'id', 'username', 'song', 'status', 'status_display', 'designer',
-            'audio_file', 'audio_url', 'cover_image', 'cover_url', 'chart_file', 'chart_file_url',
-            'review_count', 'average_score', 'created_at', 'submitted_at', 'review_completed_at'
+            'audio_file', 'audio_url', 'cover_image', 'cover_url', 'background_video', 'video_url', 'chart_file', 'chart_file_url',
+            'review_count', 'average_score', 'created_at', 'submitted_at', 'review_completed_at',
+            'is_part_one', 'part_one_chart', 'completion_bid_result'
         )
         read_only_fields = (
             'id', 'username', 'review_count', 'average_score',
@@ -297,17 +332,43 @@ class ChartSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         return self._build_url(request, obj.cover_image)
 
+    def get_video_url(self, obj):
+        """获取背景视频文件URL"""
+        request = self.context.get('request')
+        return self._build_url(request, obj.background_video)
+
+    def get_part_one_chart(self, obj):
+        """获取第一部分谱面信息"""
+        if obj.part_one_chart:
+            return {
+                'id': obj.part_one_chart.id,
+                'designer': obj.part_one_chart.designer,
+                'status': obj.part_one_chart.status
+            }
+        return None
+
+    def get_completion_bid_result(self, obj):
+        """获取完成竞标结果信息"""
+        if obj.completion_bid_result:
+            return {
+                'id': obj.completion_bid_result.id,
+                'bid_amount': obj.completion_bid_result.bid_amount,
+                'bid_type': obj.completion_bid_result.bid_type
+            }
+        return None
+
 
 class ChartCreateSerializer(serializers.ModelSerializer):
     """谱面创建序列化器"""
     
     class Meta:
         model = Chart
-        fields = ('designer', 'audio_file', 'cover_image', 'chart_file')
+        fields = ('designer', 'audio_file', 'cover_image', 'background_video', 'chart_file')
         extra_kwargs = {
             'designer': {'required': False},  # 从谱面文件解析
             'audio_file': {'required': True},
             'cover_image': {'required': True},
+            'background_video': {'required': False},
             'chart_file': {'required': True},
         }
     
@@ -335,6 +396,14 @@ class ChartCreateSerializer(serializers.ModelSerializer):
         is_valid, error_msg = validate_cover_image(value)
         if not is_valid:
             raise serializers.ValidationError(error_msg)
+        return value
+
+    def validate_background_video(self, value):
+        """验证背景视频"""
+        if value:  # 可选
+            is_valid, error_msg = validate_background_video(value)
+            if not is_valid:
+                raise serializers.ValidationError(error_msg)
         return value
 
     def validate(self, attrs):
