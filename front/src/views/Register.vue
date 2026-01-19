@@ -5,7 +5,7 @@
         <div class="card-header">
           <h2>用户注册</h2>
         </div>
-      </template>
+      </template> <!-- TODO 增加验证码、邮件找回密码功能。potentially实现majnet账号登陆-->
       <el-form 
         ref="registerFormRef" 
         :model="registerForm" 
