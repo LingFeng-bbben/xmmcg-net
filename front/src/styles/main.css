@@ -93,6 +93,7 @@ body {
 :root {
   --bg-color: #0b1220;
   --bg-image: url('/res/background.jpg');
+  --footer-gif: url('/res/harukasan_swing.gif');
   --surface-color: rgba(18, 24, 35, 0.45);
   --surface-strong: rgba(18, 24, 35, 0.65);
   --border-color: rgba(255, 255, 255, 0.08);
@@ -106,22 +107,6 @@ body {
   --danger-color: #ff7b8a;
   --info-color: #8ca0c0;
   --link-color: #9cd2ff;
-}
-.footer-gif {
-  /* 使用 CSS 变量 */
-  background-image: url('/res/harukasan_swing.gif');
-  
-  /* 必须设置宽高，否则背景图看不见 */
-  width: 100px;  /* 根据 gif 实际大小调整 */
-  height: 100px; /* 根据 gif 实际大小调整 */
-  
-  /* 确保图片正确显示 */
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  
-  /* 这是一个行内块级元素，让它和文字垂直居中（可选） */
-  display: inline-block;
 }
 
 a {
