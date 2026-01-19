@@ -87,7 +87,7 @@ if [ ! -f "$PROJECT_DIR/.env" ]; then
     echo "创建 .env 文件..."
     cat > $PROJECT_DIR/.env << EOF
 # Django Settings
-SECRET_KEY=$(python3 -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())')
+SECRET_KEY=$($VENV_DIR/bin/python -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())')
 DEBUG=False
 ALLOWED_HOSTS=*
 
@@ -108,9 +108,9 @@ fi
 
 echo "🗄️ 步骤 7/8: 初始化数据库..."
 cd $BACKEND_DIR
-source $VENV_DIR/bin/activate
-python manage.py migrate
-python manage.py collectstatic --noinput
+# 确保在虚拟环境中运行
+$VENV_DIR/bin/python manage.py migrate
+$VENV_DIR/bin/python manage.py collectstatic --noinput
 
 echo "👤 步骤 8/8: 设置权限..."
 chown -R www-data:www-data $PROJECT_DIR
