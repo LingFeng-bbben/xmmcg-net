@@ -45,10 +45,13 @@ npm run build
 cp -r $FRONTEND_DIR/dist/* $FRONTEND_DIST_DIR/
 
 echo "🔄 步骤 6/6: 更新nginx配置，重启服务..."
+rm /etc/nginx/sites-available/xmmcg
 cp $PROJECT_DIR/backend/nginx.conf /etc/nginx/sites-available/xmmcg
-ln -sf /etc/nginx/sites-available/xmmcg /etc/nginx/sites-enabled/xmmcg
+ln -sf /etc/nginx/sites-available/xmmcg /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
 nginx -t
-systemctl reload nginx
+systemctl restart nginx
+
 chown -R www-data:www-data $PROJECT_DIR
 chown -R www-data:www-data /var/www/xmmcg
 systemctl restart gunicorn
