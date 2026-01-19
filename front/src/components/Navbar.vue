@@ -315,7 +315,10 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 1000;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: var(--surface-strong);
+  backdrop-filter: blur(var(--glass-blur));
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: var(--shadow-elevated);
 }
 
 .logo {
@@ -325,7 +328,7 @@ onUnmounted(() => {
   padding: 0 20px;
   font-size: 20px;
   font-weight: bold;
-  color: #409EFF;
+  color: var(--primary-color);
   cursor: pointer;
 }
 
@@ -362,8 +365,10 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 1000;
-  background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: var(--surface-strong);
+  backdrop-filter: blur(var(--glass-blur));
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: var(--shadow-elevated);
 }
 
 .mobile-header {
@@ -386,7 +391,7 @@ onUnmounted(() => {
   gap: 12px;
   font-size: 20px;
   font-weight: bold;
-  color: #409EFF;
+  color: var(--primary-color);
 }
 
 .mobile-menu {
@@ -442,7 +447,7 @@ onUnmounted(() => {
 :deep(.el-drawer__header) {
   margin-bottom: 16px;
   padding: 20px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
 }
 
 :deep(.el-drawer__body) {

@@ -1,12 +1,16 @@
 import { createApp } from 'vue'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
+import 'element-plus/theme-chalk/dark/css-vars.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
 import './styles/main.css'
 
 const app = createApp(App)
+
+// 启用 Element Plus 暗色主题
+document.documentElement.classList.add('dark')
 
 // 配置 API 基础 URL（用于图片加载）
 // 开发环境：http://localhost:8000

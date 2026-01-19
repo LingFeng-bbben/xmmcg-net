@@ -132,14 +132,17 @@ onMounted(() => {
 <style scoped>
 .phase-timeline-container {
   padding: 20px;
-  background: #f5f5f5;
-  border-radius: 8px;
+  background: var(--surface-color);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
   margin-top: 20px;
+  box-shadow: var(--shadow-elevated);
 }
 
 .phase-timeline-container h2 {
   text-align: center;
-  color: #333;
+  color: var(--text-primary);
   margin-bottom: 30px;
   font-size: 24px;
   font-weight: 600;
@@ -147,9 +150,10 @@ onMounted(() => {
 
 .phase-item {
   padding: 15px;
-  background: white;
-  border-radius: 6px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  background: rgba(18, 24, 35, 0.35);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .phase-header {
@@ -163,7 +167,7 @@ onMounted(() => {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .phase-content {
@@ -172,7 +176,7 @@ onMounted(() => {
 
 .phase-content p {
   margin: 0 0 12px 0;
-  color: #666;
+  color: var(--text-secondary);
   line-height: 1.5;
   font-size: 14px;
 }
@@ -180,11 +184,11 @@ onMounted(() => {
 .phase-time-info {
   margin: 12px 0;
   padding: 8px 12px;
-  background: #f9f9f9;
-  border-left: 3px solid #409EFF;
+  background: rgba(122, 200, 255, 0.08);
+  border-left: 3px solid var(--primary-color);
   border-radius: 4px;
   font-size: 14px;
-  color: #555;
+  color: var(--text-secondary);
 }
 
 .phase-time-info span {
@@ -199,7 +203,7 @@ onMounted(() => {
 .access-title {
   font-size: 13px;
   font-weight: 600;
-  color: #666;
+  color: var(--text-secondary);
   margin-right: 8px;
 }
 

@@ -27,13 +27,16 @@ import Navbar from './components/Navbar.vue'
 
 .main-content {
   flex: 1;
-  padding: 20px;
-  background-color: #f5f5f5;
+  padding: 24px;
+  background: transparent;
+  color: var(--text-primary);
 }
 
 .footer {
-  background-color: #2c3e50;
-  color: white;
+  background: var(--surface-strong);
+  backdrop-filter: blur(var(--glass-blur));
+  border-top: 1px solid var(--border-color);
+  color: var(--text-secondary);
   text-align: center;
   padding: 20px;
   margin-top: auto;
