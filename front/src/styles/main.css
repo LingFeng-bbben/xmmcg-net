@@ -107,6 +107,22 @@ body {
   --info-color: #8ca0c0;
   --link-color: #9cd2ff;
 }
+.footer-gif {
+  /* 使用 CSS 变量 */
+  background-image: url('/res/harukasan_swing.gif');
+  
+  /* 必须设置宽高，否则背景图看不见 */
+  width: 100px;  /* 根据 gif 实际大小调整 */
+  height: 100px; /* 根据 gif 实际大小调整 */
+  
+  /* 确保图片正确显示 */
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  
+  /* 这是一个行内块级元素，让它和文字垂直居中（可选） */
+  display: inline-block;
+}
 
 a {
   color: var(--link-color);
@@ -164,6 +180,145 @@ p, li, span, h1, h2, h3, h4, h5, h6 {
 .el-button--danger {
   background-color: var(--danger-color);
   border-color: var(--danger-color);
+}
+
+/* 全局文字颜色覆盖 - 统一暗色主题文字颜色 */
+/* 覆盖Element Plus默认的黑色文字 */
+h1, h2, h3, h4, h5, h6,
+.el-card h1, .el-card h2, .el-card h3, .el-card h4, .el-card h5, .el-card h6 {
+  color: var(--text-primary) !important;
+}
+
+/* 覆盖常见的黑色和深灰色文字 */
+*[style*="color: #303133"],
+*[style*="color: #606266"],
+*[style*="color: #909399"],
+*[style*="color: black"],
+*[style*="color: #000"] {
+  color: var(--text-primary) !important;
+}
+
+/* 针对特定样式类的覆盖 */
+.status-label,
+.status-value,
+.action-content h3,
+.action-content p,
+.announcement-title,
+.announcement-date,
+.announcement-content,
+.card-header span,
+.timeline-content,
+.form-title,
+.form-subtitle {
+  color: var(--text-primary) !important;
+}
+
+/* 次要文字使用次要颜色 */
+.meta-info,
+.description,
+.subtitle,
+.help-text,
+.action-content p {
+  color: var(--text-secondary) !important;
+}
+
+/* 强制覆盖内联样式中的颜色 */
+.el-message-box__content p,
+.el-message-box__content span,
+.el-dialog__body p,
+.el-dialog__body span,
+.el-drawer__body p,
+.el-drawer__body span {
+  color: var(--text-primary) !important;
+}
+
+/* 专门处理弹窗中的次要信息文字 */
+.el-message-box__content p[style*="font-size: 12px"],
+.el-message-box__content .help-text,
+.el-dialog__body .help-text {
+  color: var(--text-secondary) !important;
+}
+
+/* Element Plus消息框内容颜色修复 */
+.el-message-box {
+  background: var(--surface-color) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+.el-message-box__title,
+.el-message-box__content {
+  color: var(--text-primary) !important;
+}
+
+.el-message-box__content * {
+  color: inherit !important;
+}
+
+/* 具体组件的文字颜色修复 */
+/* Announcement组件 */
+.announcement-header h4,
+.announcement-content,
+.announcement-content strong,
+.announcement-content blockquote {
+  color: var(--text-primary) !important;
+}
+
+.announcement-content code {
+  background-color: var(--surface-strong) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Home页面组件 */
+.status-item .status-label,
+.status-item .status-value,
+.action-content h3,
+.quick-actions .action-content p {
+  color: var(--text-primary) !important;
+}
+
+/* 表单页面标题 */
+.form-container h2,
+.login-form h2,
+.register-form h2 {
+  color: var(--text-primary) !important;
+}
+
+/* Charts和Songs页面 */
+.upload-info,
+.chart-info,
+.song-info,
+.eval-info {
+  color: var(--text-primary) !important;
+}
+
+.upload-info p,
+.chart-info p,
+.song-info p,
+.eval-info p {
+  color: var(--text-secondary) !important;
+}
+
+/* 通用Element Plus组件文字颜色修复 */
+.el-card .el-card__body *:not(.el-button):not(.el-tag):not(.el-badge):not(.el-icon),
+.el-dialog .el-dialog__body *:not(.el-button):not(.el-tag):not(.el-badge):not(.el-icon),
+.el-drawer .el-drawer__body *:not(.el-button):not(.el-tag):not(.el-badge):not(.el-icon) {
+  color: inherit !important;
+}
+
+/* 确保所有卡片内容使用正确的文字颜色 */
+.el-card {
+  color: var(--text-primary) !important;
+}
+
+.el-card * {
+  color: inherit;
+}
+
+/* 针对具有固定颜色样式的元素强制覆盖 */
+[style*="color: #303133"] *,
+[style*="color: #606266"] *,
+[style*="color: #909399"] * {
+  color: var(--text-primary) !important;
 }
 
 .el-message {

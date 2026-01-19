@@ -9,6 +9,7 @@
       </router-view>
     </main>
     <footer class="footer">
+      <div class="footer-gif"></div>
       <p>&copy; 2026 XMMCG. All rights reserved.</p>
     </footer>
   </div>
