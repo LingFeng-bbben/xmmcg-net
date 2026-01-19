@@ -119,6 +119,14 @@ fi
 echo "🗄️ 步骤 7/10: 初始化数据库..."
 cd $BACKEND_DIR
 $VENV_DIR/bin/python manage.py migrate
+
+echo "🔧 修复数据库权限 (SQLite 需要目录和文件写权限)..."
+chown www-data:www-data db.sqlite3
+chmod 664 db.sqlite3
+chown www-data:www-data .
+chmod 775 .
+echo "✅ 数据库权限已修复"
+
 $VENV_DIR/bin/python manage.py collectstatic --noinput
 
 echo "📦 步骤 8/10: 安装 Node.js 和构建前端..."
