@@ -2,6 +2,11 @@
 
 ## 🚨 紧急修复：500 错误 + HTTPS 警告
 
+### ⚠️ 重要：首先解决迁移冲突问题
+
+如果看到迁移错误（`FieldDoesNotExist: NewSecondBidResult has no field named 'second_bidding_round'`），
+说明服务器上有错误的本地迁移文件，需要先清理。
+
 ### 在服务器上执行以下命令
 
 ```bash
@@ -30,11 +35,26 @@ CSRF_TRUSTED_ORIGINS=https://149.104.29.136,http://149.104.29.136
 保存并退出 (Ctrl+O, Enter, Ctrl+X)
 
 ```bash
-# 2. 初始化数据库
-cd /opt/xmmcg/backend/xmmcg
-source /opt/xmmcg/venv/bin/activate
+# 2. 清理错误的迁移文件并重新部署
+cd /opt/xmmcg
+
+# 拉取最新代码（包含正确的迁移文件）
+git pull origin main
+
+# 删除服务器上本地生成的错误迁移
+rm -f backend/xmmcg/songs/migrations/0008_*.py
+# 如果有 0009、0010 等也删除
+rm -f backend/xmmcg/songs/migrations/000*.py
+
+# 重新激活虚拟环境
+source venv/bin/activate
+
+# 运行迁移（使用仓库中正确的 0008 迁移）
+cd backend/xmmcg
 python manage.py migrate
-python manage.py add_sample_data  # 创建测试数据
+
+# 创建测试数据
+python manage.py add_sample_data
 
 # 3. 创建管理员账户
 python manage.py createsuperuser

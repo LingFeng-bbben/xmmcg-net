@@ -352,29 +352,95 @@ sudo chmod 664 /opt/xmmcg/backend/xmmcg/db.sqlite3
 ### 症状
 ```
 django.db.migrations.exceptions.InconsistentMigrationHistory
+django.core.exceptions.FieldDoesNotExist: NewSecondBidResult has no field named 'second_bidding_round'
+KeyError: 'second_bidding_round'
 ```
 
+### 原因
+服务器上存在本地生成的迁移文件（如 0008、0009），但这些文件不在代码仓库中，导致迁移历史不一致。
+
 ### 解决方案
+
+#### 方案 A: 清理并重新迁移（推荐）
+```bash
+cd /opt/xmmcg
+
+# 1. 拉取最新代码
+git pull origin main
+
+# 2. 删除本地生成的迁移文件
+# 查看有哪些迁移文件
+ls -la backend/xmmcg/songs/migrations/
+
+# 删除 0008 及之后的所有迁移（保留 0001-0007）
+rm -f backend/xmmcg/songs/migrations/0008_*.py
+rm -f backend/xmmcg/songs/migrations/0009_*.py
+rm -f backend/xmmcg/songs/migrations/001*.py
+
+# 3. 清理 Python 缓存
+find backend/xmmcg/songs/migrations/ -name "*.pyc" -delete
+find backend/xmmcg/songs/migrations/__pycache__/ -type f -delete
+
+# 4. 重新运行迁移
+cd backend/xmmcg
+source /opt/xmmcg/venv/bin/activate
+python manage.py migrate
+
+# 5. 创建测试数据
+python manage.py add_sample_data
+```
+
+#### 方案 B: 完全重置迁移历史（仅开发环境）
+⚠️ **警告：此方案会删除所有数据！仅在开发/测试环境使用**
+
 ```bash
 cd /opt/xmmcg/backend/xmmcg
 source /opt/xmmcg/venv/bin/activate
 
-# 检查迁移状态
-python manage.py showmigrations
+# 1. 删除数据库
+rm db.sqlite3
 
-# 如果有冲突的迁移文件
-# 方案 A: 重置应用迁移 (谨慎使用，会丢失数据)
-python manage.py migrate songs zero
-python manage.py migrate songs
+# 2. 删除所有本地生成的迁移文件
+rm -f songs/migrations/0008_*.py
+rm -f songs/migrations/0009_*.py
 
-# 方案 B: 伪造迁移
+# 3. 清理缓存
+find songs/migrations/ -name "*.pyc" -delete
+rm -rf songs/migrations/__pycache__/
+
+# 4. 重新运行迁移
+python manage.py migrate
+
+# 5. 创建超级用户
+python manage.py createsuperuser
+
+# 6. 创建测试数据
+python manage.py add_sample_data
+```
+
+#### 方案 C: 伪造迁移（高级用户）
+如果你知道自己在做什么：
+```bash
+cd /opt/xmmcg/backend/xmmcg
+source /opt/xmmcg/venv/bin/activate
+
+# 查看当前迁移状态
+python manage.py showmigrations songs
+
+# 伪造某个迁移已应用
 python manage.py migrate --fake songs 0007
 
-# 方案 C: 清理并重新迁移 (开发环境)
-rm db.sqlite3
+# 删除错误的迁移文件
+rm backend/xmmcg/songs/migrations/0008_*.py
+
+# 重新运行迁移
 python manage.py migrate
-python manage.py createsuperuser
 ```
+
+### 预防措施
+1. **不要在服务器上运行 `makemigrations`**
+2. **所有迁移都应在开发环境创建并提交到 Git**
+3. **服务器只运行 `migrate`，不创建新迁移**
 
 ---
 
