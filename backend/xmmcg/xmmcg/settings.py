@@ -134,6 +134,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR.parent.parent / 'staticfiles'  # 生产环境静态文件收集目录
 
 # Media Files Configuration
 MEDIA_URL = "/media/"
@@ -144,12 +145,21 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024  # 25MB (支持20MB视频文件)
 DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024  # 25MB
 
 # CORS Configuration
+# 生产环境域名通过环境变量 PRODUCTION_DOMAIN 配置
+PRODUCTION_DOMAIN = config('PRODUCTION_DOMAIN', default='')
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
 ]
+
+if PRODUCTION_DOMAIN:
+    CORS_ALLOWED_ORIGINS.extend([
+        f"https://{PRODUCTION_DOMAIN}",
+        f"http://{PRODUCTION_DOMAIN}",
+    ])
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = False
@@ -180,6 +190,13 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
 ]
+
+if PRODUCTION_DOMAIN:
+    CSRF_TRUSTED_ORIGINS.extend([
+        f"https://{PRODUCTION_DOMAIN}",
+        f"http://{PRODUCTION_DOMAIN}",
+    ])
+
 CSRF_USE_SESSIONS = False
 
 # REST Framework Configuration
