@@ -146,7 +146,7 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024  # 25MB
 
 # CORS Configuration
 # 生产环境域名通过环境变量 PRODUCTION_DOMAIN 配置
-PRODUCTION_DOMAIN = config('PRODUCTION_DOMAIN', default='')
+PRODUCTION_DOMAIN = config('PRODUCTION_DOMAIN', default='xmmcg.majdata.net')
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
