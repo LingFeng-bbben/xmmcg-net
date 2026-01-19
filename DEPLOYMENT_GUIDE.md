@@ -533,7 +533,33 @@ CSRF_COOKIE_SECURE=True
 
 ---
 
-#### 问题 8: CORS 错误
+#### 问题 8: 数据库只读错误
+
+**症状**: Admin 登录时报错 `attempt to write a readonly database`
+
+**原因**: SQLite 数据库文件或包含数据库的目录权限不正确。SQLite 需要：
+1. 对 `db.sqlite3` 文件有读写权限
+2. 对包含数据库的**目录**也要有写权限（用于创建临时文件）
+
+**解决方案**:
+```bash
+cd /opt/xmmcg/backend/xmmcg
+
+# 修复数据库文件权限
+sudo chown www-data:www-data db.sqlite3
+sudo chmod 664 db.sqlite3
+
+# 修复目录权限（重要！）
+sudo chown www-data:www-data .
+sudo chmod 775 .
+
+# 重启服务
+sudo systemctl restart gunicorn
+```
+
+---
+
+#### 问题 9: CORS 错误
 
 **原因**: 前端域名未添加到白名单
 
