@@ -221,7 +221,9 @@ class BiddingService:
         bidding_round.save()
         
         # 处理代币扣除
-        token_deduction = BiddingService.process_allocation_tokens(bidding_round.id)
+        ignore_deduction_fail = priority_self and bidding_type == 'chart'
+        token_deduction = BiddingService.process_allocation_tokens(bidding_round.id,
+                                                                ignore_token_overshoot=ignore_deduction_fail )
         
         # 返回统计信息
         target_type_name = '歌曲' if bidding_type == 'song' else '谱面'
@@ -339,7 +341,7 @@ class BiddingService:
     
     @staticmethod
     @transaction.atomic
-    def process_allocation_tokens(bidding_round_id):
+    def process_allocation_tokens(bidding_round_id,ignore_token_overshoot:bool=False):
         """
         处理竞标分配后的代币扣除
         
@@ -351,7 +353,9 @@ class BiddingService:
         
         Args:
             bidding_round_id: 竞标轮次ID
-            
+            ignore_token_overshoot:bool=False 是否忽略代币不足的用户（默认False，抛出异常）。
+            因为第二轮竞标可能出现随机分配代币不足的情况，但是这并不会影响什么（因为之后不再需要代币了），所以设置
+            允许跳过代币数量校验。嘛，毕竟前端已经校验过了。
         Returns:
             dict: 包含代币处理统计信息
             
@@ -380,7 +384,7 @@ class BiddingService:
                 profile, created = UserProfile.objects.get_or_create(user=result.user)
                 
                 # 验证代币足够
-                if profile.token < result.bid_amount:
+                if (profile.token < result.bid_amount) and not ignore_token_overshoot:
                     failed_users.append({
                         'user': result.user.username,
                         'required': result.bid_amount,
