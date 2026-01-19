@@ -133,8 +133,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR.parent.parent / 'staticfiles'  # 生产环境静态文件收集目录
+STATIC_URL = "/static/"
+STATIC_ROOT = "/var/www/xmmcg/static"  # 生产环境静态文件收集目录
 
 # Media Files Configuration
 MEDIA_URL = "/media/"
