@@ -355,7 +355,100 @@ sudo systemctl is-enabled nginx
 
 ## 🐛 故障排查
 
-### 问题 1: 502 Bad Gateway
+### 常见问题速查
+
+#### 问题 1: API 返回 400 Bad Request
+
+**症状**: 浏览器访问 API 返回 `Bad Request (400)`
+
+**原因**: 域名未在 `ALLOWED_HOSTS` 或 `CSRF_TRUSTED_ORIGINS` 中配置
+
+**解决方案**:
+```bash
+# 编辑 .env 文件
+sudo nano /opt/xmmcg/.env
+```
+
+添加以下配置（替换为你的域名）:
+```env
+ALLOWED_HOSTS=xmmcg.majdata.net,149.104.29.136,localhost
+CSRF_TRUSTED_ORIGINS=https://xmmcg.majdata.net,https://149.104.29.136
+PRODUCTION_DOMAIN=xmmcg.majdata.net
+```
+
+重启服务:
+```bash
+sudo systemctl restart gunicorn
+```
+
+验证配置:
+```bash
+cd /opt/xmmcg/backend/xmmcg
+source /opt/xmmcg/venv/bin/activate
+python manage.py shell -c "from django.conf import settings; print(settings.ALLOWED_HOSTS)"
+```
+
+---
+
+#### 问题 2: 数据库迁移冲突
+
+**症状**: `FieldDoesNotExist` 或 `InconsistentMigrationHistory`
+
+**原因**: 服务器上存在本地生成的迁移文件与仓库不一致
+
+**解决方案**:
+```bash
+cd /opt/xmmcg
+git pull origin main
+
+# 删除本地生成的迁移（0008 之后）
+rm -f backend/xmmcg/songs/migrations/0008_*.py
+rm -f backend/xmmcg/songs/migrations/0009_*.py
+find backend/xmmcg/songs/migrations/ -name "*.pyc" -delete
+
+# 重新运行迁移
+cd backend/xmmcg
+source /opt/xmmcg/venv/bin/activate
+python manage.py migrate
+```
+
+开发环境重置（⚠️ 会丢失数据）:
+```bash
+cd /opt/xmmcg/backend/xmmcg
+rm db.sqlite3
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py add_sample_data
+```
+
+---
+
+#### 问题 3: Admin 无法登录
+
+**原因**: 超级用户未创建或密码错误
+
+**创建超级用户**:
+```bash
+cd /opt/xmmcg/backend/xmmcg
+source /opt/xmmcg/venv/bin/activate
+python manage.py createsuperuser
+```
+
+**重置密码**:
+```bash
+python manage.py shell
+```
+```python
+from django.contrib.auth.models import User
+user = User.objects.get(username='admin')
+user.set_password('new_password')
+user.save()
+exit()
+```
+
+---
+
+#### 问题 4: 502 Bad Gateway
 
 **原因**: Gunicorn 未运行或 socket 文件问题
 
@@ -374,7 +467,7 @@ sudo systemctl restart gunicorn
 sudo journalctl -u gunicorn -xe
 ```
 
-### 问题 2: 静态文件 404
+#### 问题 5: 静态文件 404
 
 **原因**: 静态文件未收集或路径错误
 
@@ -392,30 +485,9 @@ sudo chown -R www-data:www-data /var/www/xmmcg/static/
 curl http://localhost/static/admin/css/base.css
 ```
 
-### 问题 3: 数据库迁移失败
+---
 
-**原因**: 迁移文件冲突
-
-**解决**:
-```bash
-# 备份数据库
-cd /opt/xmmcg/backend/xmmcg
-cp db.sqlite3 db.sqlite3.backup
-
-# 查看迁移状态
-source /opt/xmmcg/venv/bin/activate
-python manage.py showmigrations
-
-# 方案1: 假迁移（有数据时）
-python manage.py migrate --fake songs 0007
-
-# 方案2: 重置数据库（无重要数据时）
-rm db.sqlite3
-python manage.py migrate
-python manage.py createsuperuser
-```
-
-### 问题 4: 文件上传失败
+#### 问题 6: 文件上传失败
 
 **原因**: media 目录权限问题
 
@@ -432,7 +504,36 @@ sudo nano /etc/nginx/sites-available/xmmcg
 sudo systemctl reload nginx
 ```
 
-### 问题 5: CORS 错误
+---
+
+#### 问题 7: HTTPS 证书警告（使用 IP 访问）
+
+**症状**: 浏览器显示 "不安全连接" 或 SSL 证书错误
+
+**原因**: SSL 证书不能颁发给 IP 地址，只能颁发给域名
+
+**临时方案**:
+- 使用 HTTP: `http://149.104.29.136`
+- 浏览器点击"高级" → "继续访问"（仅测试）
+
+**正确方案**:
+1. 配置域名并添加 DNS A 记录
+2. 安装 SSL 证书:
+```bash
+sudo certbot --nginx -d your-domain.com
+```
+3. 更新 .env:
+```env
+DEBUG=False
+PRODUCTION_DOMAIN=your-domain.com
+SECURE_SSL_REDIRECT=True
+SESSION_COOKIE_SECURE=True
+CSRF_COOKIE_SECURE=True
+```
+
+---
+
+#### 问题 8: CORS 错误
 
 **原因**: 前端域名未添加到白名单
 
@@ -448,13 +549,32 @@ PRODUCTION_DOMAIN=your-domain.com
 sudo systemctl restart gunicorn
 ```
 
-### 问题 6: Git 权限错误
+---
+
+#### 问题 9: Git 权限错误
 
 **错误**: `fatal: detected dubious ownership`
 
 **解决**:
 ```bash
 git config --global --add safe.directory /opt/xmmcg
+```
+
+---
+
+### 日志查看命令
+
+```bash
+# Gunicorn 日志
+sudo journalctl -u gunicorn -n 50
+sudo journalctl -u gunicorn -f  # 实时查看
+
+# Nginx 日志
+sudo tail -f /var/log/nginx/access.log
+sudo tail -f /var/log/nginx/error.log
+
+# 检查服务状态
+sudo systemctl status gunicorn nginx
 ```
 
 ---
