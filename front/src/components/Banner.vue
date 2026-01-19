@@ -48,6 +48,8 @@ const handleClick = (link) => {
 const fetchBanners = async () => {
   try {
     console.log('开始获取Banner数据...')
+    console.log('当前location:', window.location.href)
+    console.log('API_BASE_URL:', window.API_BASE_URL)
     const data = await getBanners()
     console.log('API响应:', data)
     
@@ -56,7 +58,14 @@ const fetchBanners = async () => {
       console.log('设置Banner数据:', banners.value)
       // 调试每个banner的图片URL
       banners.value.forEach((banner, index) => {
-        console.log(`Banner ${index + 1} 图片URL:`, banner.image_url)
+        console.log(`Banner ${index + 1} 原始image_url:`, banner.image_url)
+        console.log(`Banner ${index + 1} 最终URL:`, banner.image_url)
+        // 检查是否以/media开头
+        if (banner.image_url && banner.image_url.startsWith('/media/')) {
+          console.log('✓ 使用相对路径，将通过Vite代理访问')
+        } else {
+          console.warn('⚠ 非标准路径，可能导致问题')
+        }
       })
     } else if (data && data.data && Array.isArray(data.data)) {
       banners.value = data.data
