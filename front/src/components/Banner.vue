@@ -4,8 +4,8 @@
       <div 
         class="banner-item" 
         :style="{ 
-          backgroundColor: item.color,
-          backgroundImage: item.image_url ? `url(${processImageUrl(item.image_url)})` : 'none',
+          backgroundColor: item.image_url ? 'transparent' : item.color,
+          backgroundImage: item.image_url ? `url(${item.image_url})` : 'none',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat'
@@ -34,30 +34,6 @@ const router = useRouter()
 
 const banners = ref([])
 
-// 处理图片URL，确保在nginx反向代理下正确访问
-const processImageUrl = (url) => {
-  if (!url) return null
-  
-  // 如果是相对路径，直接返回
-  if (url.startsWith('/')) {
-    return url
-  }
-  
-  // 如果是localhost开发地址，转换为相对路径
-  if (url.includes('localhost:8000')) {
-    return url.replace(/https?:\/\/localhost:8000/, '')
-  }
-  
-  // 如果是完整的服务器地址，提取路径部分
-  if (url.includes('/media/') || url.includes('/static/')) {
-    const pathMatch = url.match(/\/(media|static)\/.*$/)
-    return pathMatch ? pathMatch[0] : url
-  }
-  
-  // 外部URL直接返回
-  return url
-}
-
 const handleClick = (link) => {
   if (link) {
     // 检查是否是内部路由
@@ -71,12 +47,27 @@ const handleClick = (link) => {
 
 const fetchBanners = async () => {
   try {
+    console.log('开始获取Banner数据...')
     const data = await getBanners()
-    if (data && data.length > 0) {
+    console.log('API响应:', data)
+    
+    if (data && Array.isArray(data) && data.length > 0) {
       banners.value = data
+      console.log('设置Banner数据:', banners.value)
+      // 调试每个banner的图片URL
+      banners.value.forEach((banner, index) => {
+        console.log(`Banner ${index + 1} 图片URL:`, banner.image_url)
+      })
+    } else if (data && data.data && Array.isArray(data.data)) {
+      banners.value = data.data
+      console.log('设置嵌套Banner数据:', banners.value)
+    } else {
+      console.warn('没有可用的Banner数据:', data)
+      banners.value = []
     }
   } catch (error) {
     console.error('获取 Banner 失败:', error)
+    banners.value = []
   }
 }
 

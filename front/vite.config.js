@@ -16,6 +16,10 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
         credentials: 'include'  // 确保 Cookie 在代理时被正确转发
+      },
+      '/media': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
       }
     }
   }
