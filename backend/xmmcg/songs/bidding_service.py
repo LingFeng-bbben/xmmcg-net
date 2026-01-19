@@ -225,9 +225,14 @@ class BiddingService:
         token_deduction = BiddingService.process_allocation_tokens(bidding_round.id,
                                                                 ignore_token_overshoot=ignore_deduction_fail )
         
+        # 处理歌曲作者奖励（仅歌曲竞标）
+        song_author_rewards = {}
+        if bidding_type == 'song':
+            song_author_rewards = BiddingService.process_song_author_rewards(bidding_round.id)
+        
         # 返回统计信息
         target_type_name = '歌曲' if bidding_type == 'song' else '谱面'
-        return {
+        result = {
             'status': 'success',
             'message': f'{target_type_name}竞标分配完成',
             'bidding_type': bidding_type,
@@ -238,6 +243,12 @@ class BiddingService:
             'total_bidders': len(bidding_users),
             'token_deduction': token_deduction,
         }
+        
+        # 添加歌曲作者奖励信息（如果有）
+        if song_author_rewards:
+            result['song_author_rewards'] = song_author_rewards
+        
+        return result
     
     @staticmethod
     def create_bid(user, bidding_round, amount, song=None, chart=None):
@@ -414,6 +425,86 @@ class BiddingService:
             'users_deducted': users_deducted,
             'failed_users': failed_users,
             'failed_count': len(failed_users),
+        }
+    
+    @staticmethod
+    @transaction.atomic
+    def process_song_author_rewards(bidding_round_id):
+        """
+        处理歌曲作者奖励代币
+        
+        逻辑：
+        1. 获取该轮次所有歌曲竞标的分配结果
+        2. 找到被分配的歌曲的原作者
+        3. 给每个歌曲作者奖励100代币
+        
+        Args:
+            bidding_round_id: 竞标轮次ID
+            
+        Returns:
+            dict: 包含奖励处理统计信息
+            
+        Raises:
+            ValidationError: 如果处理失败
+        """
+        
+        # 获取竞标轮次
+        try:
+            bidding_round = BiddingRound.objects.get(id=bidding_round_id)
+        except BiddingRound.DoesNotExist:
+            raise ValidationError('竞标轮次不存在')
+        
+        # 只处理歌曲竞标
+        if bidding_round.bidding_type != 'song':
+            return {
+                'message': '仅歌曲竞标提供作者奖励',
+                'rewarded_authors': 0,
+                'total_reward': 0
+            }
+        
+        # 获取该轮次所有歌曲分配结果
+        results = BidResult.objects.filter(
+            bidding_round=bidding_round,
+            bid_type='song'
+        ).select_related('song', 'song__user')
+        
+        # 统计每个歌曲作者的奖励（一个作者可能有多首歌被分配）
+        author_rewards = {}  # user_id -> reward_count
+        
+        for result in results:
+            if result.song and result.song.user:
+                author_id = result.song.user.id
+                author_rewards[author_id] = author_rewards.get(author_id, 0) + 1
+        
+        # 给每个歌曲作者发放奖励代币
+        total_rewarded = 0
+        rewarded_authors = 0
+        failed_rewards = []
+        
+        for author_id, reward_count in author_rewards.items():
+            try:
+                author = User.objects.get(id=author_id)
+                profile, created = UserProfile.objects.get_or_create(user=author)
+                
+                # 每首被分配的歌曲奖励100代币
+                reward_amount = reward_count * 100
+                profile.token += reward_amount
+                profile.save()
+                
+                total_rewarded += reward_amount
+                rewarded_authors += 1
+                
+            except Exception as e:
+                failed_rewards.append({
+                    'author_id': author_id,
+                    'error': str(e)
+                })
+        
+        return {
+            'message': f'歌曲作者奖励发放完成',
+            'rewarded_authors': rewarded_authors,
+            'total_reward': total_rewarded,
+            'failed_rewards': failed_rewards,
         }
     
     @staticmethod
