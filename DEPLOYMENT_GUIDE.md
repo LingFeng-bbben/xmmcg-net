@@ -390,7 +390,48 @@ python manage.py shell -c "from django.conf import settings; print(settings.ALLO
 
 ---
 
-#### 问题 2: 数据库迁移冲突
+### 问题 2: 数据库表缺失 (OperationalError: no such table)
+现象：
+
+
+访问特定 App 的页面（如 /admin/songs/banner/）时报错 500。
+
+**错误**：开启 Debug 模式后看到具体报错：`OperationalError: no such table: songs_banner`。
+
+运行 python manage.py migrate 提示 "No migrations to apply"，但数据库里确实没表。
+
+**原因**:
+
+
+migrate 命令**只负责执行已存在的迁移文件。如果新创建了 Model 但没有生成迁移文件（Blueprint），Django 不会自动创建表。**这通常发生在新建 App 或新加 Model 后忘记执行 makemigrations。
+
+**解决方案**:
+
+
+必须先生成迁移文件，再执行迁移。
+
+检查配置：确保新 App 已加入 settings.py 的 INSTALLED_APPS 中。
+
+**强制生成迁移：指定 App 名称生成迁移文件。例如：`python3 manage.py makemigration songs`**
+
+应用迁移。
+
+Bash
+cd /opt/xmmcg/backend
+source /opt/xmmcg/venv/bin/activate
+
+# 步骤 1: 生成图纸 (必须指定 App 名字，例如 songs)
+python manage.py makemigrations songs
+
+# 步骤 2: 开始施工
+python manage.py migrate songs
+
+# 步骤 3: 重启服务
+sudo systemctl restart gunicorn
+
+---
+
+#### 问题 3: 数据库迁移冲突
 
 **症状**: `FieldDoesNotExist` 或 `InconsistentMigrationHistory`
 
@@ -423,7 +464,7 @@ python manage.py add_sample_data
 
 ---
 
-#### 问题 3: Admin 无法登录
+#### 问题 4: Admin 无法登录
 
 **原因**: 超级用户未创建或密码错误
 
@@ -448,7 +489,7 @@ exit()
 
 ---
 
-#### 问题 4: 502 Bad Gateway
+#### 问题 5: 502 Bad Gateway
 
 **原因**: Gunicorn 未运行或 socket 文件问题
 
@@ -467,7 +508,7 @@ sudo systemctl restart gunicorn
 sudo journalctl -u gunicorn -xe
 ```
 
-#### 问题 5: 静态文件 404
+#### 问题 6: 静态文件 404
 
 **原因**: 静态文件未收集或路径错误
 
@@ -487,7 +528,7 @@ curl http://localhost/static/admin/css/base.css
 
 ---
 
-#### 问题 6: 文件上传失败
+#### 问题 7: 文件上传失败
 
 **原因**: media 目录权限问题
 
@@ -506,7 +547,7 @@ sudo systemctl reload nginx
 
 ---
 
-#### 问题 7: HTTPS 证书警告（使用 IP 访问）
+#### 问题 8: HTTPS 证书警告（使用 IP 访问）
 
 **症状**: 浏览器显示 "不安全连接" 或 SSL 证书错误
 
@@ -533,7 +574,7 @@ CSRF_COOKIE_SECURE=True
 
 ---
 
-#### 问题 8: 数据库只读错误
+#### 问题 9: 数据库只读错误
 
 **症状**: Admin 登录时报错 `attempt to write a readonly database`
 
@@ -559,7 +600,7 @@ sudo systemctl restart gunicorn
 
 ---
 
-#### 问题 9: CORS 错误
+#### 问题 10: CORS 错误
 
 **原因**: 前端域名未添加到白名单
 
@@ -577,7 +618,7 @@ sudo systemctl restart gunicorn
 
 ---
 
-#### 问题 9: Git 权限错误
+#### 问题 11: Git 权限错误
 
 **错误**: `fatal: detected dubious ownership`
 
@@ -585,6 +626,8 @@ sudo systemctl restart gunicorn
 ```bash
 git config --global --add safe.directory /opt/xmmcg
 ```
+
+
 
 ---
 
