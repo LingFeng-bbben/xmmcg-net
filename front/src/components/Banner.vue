@@ -1,7 +1,10 @@
 <template>
   <el-carousel :interval="5000" height="300px" class="banner-carousel">
     <el-carousel-item v-for="(item, index) in banners" :key="index">
-      <div class="banner-item" :style="{ backgroundColor: item.color }">
+      <div class="banner-item" :style="{backgroundColor: item.color,
+    backgroundImage: item.image_url ? `url(${item.image_url})` : 'none',
+    backgroundSize: 'cover', 
+    backgroundPosition: 'center' }">
         <div class="banner-content">
           <h2>{{ item.title }}</h2>
           <p>{{ item.content }}</p>
