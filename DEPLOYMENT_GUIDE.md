@@ -422,10 +422,11 @@ source /opt/xmmcg/venv/bin/activate
 
 #### 步骤 1: 生成图纸 (必须指定 App 名字，例如 songs)
 python manage.py makemigrations songs
+python manage.py makemigrations users
+python manage.py makemigrations
 
 #### 步骤 2: 开始施工
-python manage.py migrate songs
-
+python manage.py migrate
 #### 步骤 3: 重启服务
 sudo systemctl restart gunicorn
 
@@ -562,6 +563,69 @@ exit()
 
 #### 问题 5: 502 Bad Gateway
 
+
+#### 又一种可能性 
+
+**原因**：修改migrate之后**gunicron又失去了权限。**
+
+##### 解决办法
+
+先把如下的权限刷给他。
+
+```
+# 1. 修复后端代码 & SQLite 权限 (核心)
+chown -R www-data:www-data /opt/xmmcg/backend
+
+# 2. 修复日志权限 (防止启动失败)
+chown -R www-data:www-data /var/log/gunicorn
+
+# 3. 修复上传目录权限 (防止上传报错)
+chown -R www-data:www-data /var/www/xmmcg/media
+
+# 4. 修复配置读取权限 (防止读不到 .env)
+chown www-data:www-data /opt/xmmcg/.env
+chmod 640 /opt/xmmcg/.env
+
+# 5. 重启服务生效
+systemctl restart gunicorn
+```
+
+
+使其可以重启后自动解决run目录问题。执行`vim /etc/systemd/system/gunicorn.service`，向里面添加
+```bash
+[Service]
+# ... 其他配置 ...
+User=www-data
+Group=www-data
+
+# ✅ 核心配置：这行指令告诉 Systemd：
+# "在启动服务前，请在 /run/ 下创建一个叫 gunicorn 的目录，
+# 并把它所有权给 User 设置的用户 (www-data)。
+# 服务停止时，自动删掉这个目录。"
+RuntimeDirectory=gunicorn
+
+# 你的 Socket 绑定路径 (必须匹配上面的目录)
+# 注意：这里路径不用改，RuntimeDirectory=gunicorn 会自动对应 /run/gunicorn/
+ExecStart=/opt/xmmcg/venv/bin/gunicorn \
+    --bind unix:/run/gunicorn/xmmcg.sock \
+    # ... 其他参数 ...
+```
+
+
+然后执行
+
+```bash
+# 1. 告诉 Systemd 读取新配置
+systemctl daemon-reload
+
+# 2. 重启服务
+systemctl restart gunicorn
+
+# 3. 验证目录是否自动创建
+ls -ld /run/gunicorn
+```
+
+---
 **原因**: Gunicorn 未运行或 socket 文件问题
 
 **解决**:
