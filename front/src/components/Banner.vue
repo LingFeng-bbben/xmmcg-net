@@ -2,7 +2,9 @@
   <el-carousel :interval="5000" height="300px" class="banner-carousel">
     <el-carousel-item v-for="(item, index) in banners" :key="index">
       <div class="banner-item" :style="{backgroundColor: item.color,
-    backgroundImage: item.image_url ? `url(${item.image_url})` : 'none',
+    backgroundImage: item.image_url 
+    ? `linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url(${item.image_url})` 
+    : 'none',
     backgroundSize: 'cover', 
     backgroundPosition: 'center' }">
         <div class="banner-content">
