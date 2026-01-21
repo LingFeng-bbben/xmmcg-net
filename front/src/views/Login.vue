@@ -98,10 +98,19 @@ const handleLogin = async () => {
         localStorage.setItem('username', data.user?.username || loginForm.username)
         
         ElMessage.success('登录成功')
+        //修改让重定向可以刷新页面。
+        const redirectPath = route.query.redirect || '/profile'
+
+        // 2. 为了兼容 Hash模式 (#/profile) 和 History模式 (/profile)
+        // 使用 router.resolve 生成完整的 href (例如: http://localhost/#/profile)
+        const { href } = router.resolve({ path: redirectPath })
+
+        // 3. 使用原生 window.location 进行跳转，这会触发浏览器刷新
+        window.location.href = href
         
-        // 跳转到之前的页面或个人中心
-        const redirect = route.query.redirect || '/profile'
-        router.push(redirect)
+        // // 跳转到之前的页面或个人中心
+        // const redirect = route.query.redirect || '/profile'
+        // router.push(redirect)
       } catch (error) {
         ElMessage.error(error.message || '登录失败，请检查用户名和密码')
       } finally {
