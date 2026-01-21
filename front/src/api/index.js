@@ -148,6 +148,8 @@ export const getUserProfile = async () => {
   }
 }
 
+
+
 /**
  * 确保已有 CSRF Token（若无则向后端获取并设置 Cookie）
  */
@@ -540,3 +542,13 @@ export const submitExtraReview = async (chartId, score, comments = '') => {
   }
 }
 
+/**
+ * 
+ * 获取其他用户的公开信息
+ */
+export const getUserPublicInfo = (userId) => {
+  return request({
+    url: `/users/${userId}/public/`, // 注意这里对应刚才配置的 URL
+    method: 'get'
+  })
+}

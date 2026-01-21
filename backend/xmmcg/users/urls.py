@@ -13,6 +13,7 @@ urlpatterns = [
     # 用户信息相关
     path('me/', views.get_current_user, name='get_current_user'),
     path('profile/', views.update_profile, name='update_profile'),
+    path('<int:pk>/public/', views.get_user_public_info, name='get_user_public_info'),#专用获取其他用户可见信息
     
     # 密码管理
     path('change-password/', views.change_password, name='change_password'),

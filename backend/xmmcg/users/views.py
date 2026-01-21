@@ -1,3 +1,4 @@
+from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -87,6 +88,20 @@ def logout(request):
         'message': '登出成功'
     }, status=status.HTTP_200_OK)
 
+from .serializers import UserPublicSerializer 
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated]) # 或者 AllowAny，看你想不想让游客看
+def get_user_public_info(request, pk):
+    """
+    根据用户ID获取公开信息
+    API: GET /users/<int:pk>/public/
+    """
+    # 查找指定ID的用户，找不到返回 404
+    target_user = get_object_or_404(User, pk=pk)
+    
+    serializer = UserPublicSerializer(target_user)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -423,3 +438,4 @@ def deduct_user_token(request):
         'new_token': new_token,
         'amount_changed': -amount
     }, status=status.HTTP_200_OK)
+

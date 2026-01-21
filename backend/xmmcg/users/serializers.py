@@ -133,3 +133,25 @@ class UpdateTokenSerializer(serializers.Serializer):
         if value < 0:
             raise serializers.ValidationError("Token 不能为负数")
         return value
+
+
+class UserPublicSerializer(serializers.ModelSerializer):
+    """
+    专门用于公开展示的用户信息
+    只包含：ID、用户名、QQ号、作品统计
+    ❌ 绝对不包含：Token(余额)、Email、密码等
+    """
+    qqid = serializers.CharField(source='profile.qqid', read_only=True)
+    songsCount = serializers.SerializerMethodField()
+    chartsCount = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ('id', 'username', 'qqid', 'songsCount', 'chartsCount')
+
+    # 复用你之前的统计逻辑
+    def get_songsCount(self, obj):
+        return obj.songs.count()
+    
+    def get_chartsCount(self, obj):
+        return obj.charts.count() if hasattr(obj, 'charts') else 0

@@ -2,18 +2,24 @@
   <div class="charts-page">
     <el-container>
       <el-main>
-        <!-- 1. 上传谱面组件 -->
         <el-card class="upload-card" shadow="hover">
           <template #header>
             <div class="card-header">
               <el-icon><Upload /></el-icon>
               <span>{{ uploadCardTitle }}</span>
-              <el-tag v-if="myBidResult" type="success" size="small">
+              
+              <el-tag v-if="myBidResult" type="success" size="small" style="margin-right: 5px;">
                 中标歌曲: {{ getBidResultSongTitle(myBidResult) }}
               </el-tag>
-              <el-tag v-if="myBidResult && isSecondStage" type="warning" size="small">
+              
+              <el-tag v-if="myBidResult && isSecondStage" type="warning" size="small" style="margin-right: 5px;">
                 二次竞标
               </el-tag>
+
+              <el-tag v-if="designerQQ" type="info" size="small" effect="plain">
+                谱师QQ: {{ designerQQ }}
+              </el-tag>
+
             </div>
           </template>
 
@@ -462,12 +468,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Picture, VideoCamera, Document, List, Refresh, Download, Clock, TrophyBase } from '@element-plus/icons-vue'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
-import { getBidResults, getCharts, getMyCharts, submitChart, getCurrentPhase, getMyBids, getBiddingRounds, submitBid, getUserProfile, deleteBid, downloadChartBundle } from '../api'
+import { getBidResults, getCharts, getMyCharts, submitChart, getCurrentPhase, getMyBids, getBiddingRounds, submitBid, getUserProfile, deleteBid, getUserPublicInfo, downloadChartBundle } from '../api'
 
 // ==================== 数据 ====================
 const uploading = ref(false)
@@ -599,6 +605,64 @@ const getChartDisplayTitle = (chart) => {
   
   return title
 }
+
+
+
+// ==================== 获取竞标QQ ====================
+// 假设 myBidResult 是你的数据源（可能是 props 传进来的，也可能是当前页面 fetch 到的 ref）
+// 这里假设它是当前页面的一个 ref 或者是 props
+// const props = defineProps({ myBidResult: Object }) // 如果是子组件用这个
+
+
+// ✅ 2. 定义一个变量专门存 QQ
+const designerQQ = ref('')
+
+// ✅ 3. 核心逻辑：监听 myBidResult 变动
+// 当 myBidResult 有值了，说明中标结果出来了，我们立刻拿着 ID 去查 QQ
+// ✅ 3. 修正后的逻辑：去 chart 对象里找 user_id
+watch(
+  () => myBidResult.value,
+  async (newResult) => {
+    designerQQ.value = '' // 先重置
+
+    if (!newResult) return
+
+    let targetId = null
+
+    // 🕵️‍♂️ 方案 A：如果是“谱面竞标(chart)”，我们要找原谱师（在 chart 对象里）
+    if (newResult.bid_type === 'chart' && newResult.chart) {
+        // 尝试从 chart 里获取 user_id 或 user.id
+        // 请注意：这里假设后端 chart 序列化器里有 user 字段
+        if (newResult.chart.user_id) {
+            targetId = newResult.chart.user_id
+        } else if (newResult.chart.user) {
+             targetId = (typeof newResult.chart.user === 'object') 
+                ? newResult.chart.user.id 
+                : newResult.chart.user
+        }
+    } 
+    // 🕵️‍♂️ 方案 B：如果是“歌曲竞标(song)”，那中标人就是你自己
+    // 这种情况下，其实不需要查别人的 QQ，直接显示你自己的（或者不显示）
+    // 如果你非要显示，可以用你本地存储的 user_id
+    else if (newResult.bid_type === 'song') {
+        // 这里 targetId 可以是你自己的 ID，如果你想显示自己的 QQ
+        // const myProfile = await getUserProfile() ...
+    }
+
+    // 发起查询
+    if (targetId) {
+      try {
+        const res = await getUserPublicInfo(targetId)
+        if (res && res.qqid) {
+            designerQQ.value = res.qqid
+        }
+      } catch (error) {
+        console.error('获取谱师QQ失败', error)
+      }
+    }
+  },
+  { immediate: true }
+)
 
 // ==================== 文件上传处理 ====================
 const handleAudioChange = (file) => {
