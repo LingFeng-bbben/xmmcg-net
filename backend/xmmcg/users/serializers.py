@@ -38,6 +38,11 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'username': '用户名已存在'
             })
+        #验证QQ号是否已存在
+        if data.get('qqid') and UserProfile.objects.filter(qqid=data['qqid']).exists():
+            raise serializers.ValidationError({
+                'qqid': '该QQ号已被注册'
+            })
         
         # 验证邮箱是否已存在
         if data.get('email') and User.objects.filter(email=data['email']).exists():
@@ -51,11 +56,12 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         """创建用户和用户资料"""
         validated_data.pop('password_confirm')
         password = validated_data.pop('password')
+        qqid = validated_data.pop('qqid', '') # User里没有qq号字段，以免出错
         user = User.objects.create(**validated_data)
         user.set_password(password)
         user.save()
         # 创建用户资料（包含 token）
-        UserProfile.objects.create(user=user, qqid=validated_data.get('qqid', ''), token=0)
+        UserProfile.objects.create(user=user, qqid=qqid, token=0) # 已经获得了QQID。
         return user
 
 
