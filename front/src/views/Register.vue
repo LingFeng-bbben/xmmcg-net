@@ -19,6 +19,13 @@
             :prefix-icon="User"
           />
         </el-form-item>
+        <el-form-item label="QQ号" prop="qqid">
+          <el-input 
+            v-model="registerForm.qqid" 
+            placeholder="请输入主要使用的QQ号"
+            :prefix-icon="User"
+          />
+        </el-form-item>
         <el-form-item label="邮箱" prop="email">
           <el-input 
             v-model="registerForm.email" 
@@ -80,6 +87,7 @@ const loading = ref(false)
 
 const registerForm = reactive({
   username: '',
+  qqid: '',
   email: '',
   password: '',
   confirmPassword: ''
@@ -122,6 +130,7 @@ const handleRegister = async () => {
       try {
         await register(
           registerForm.username,
+          registerForm.qqid,
           registerForm.email,
           registerForm.password,
           registerForm.confirmPassword
