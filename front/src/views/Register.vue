@@ -108,6 +108,10 @@ const rules = {
     { required: true, message: '请输入用户名', trigger: 'blur' },
     { min: 3, max: 20, message: '用户名长度为 3-20 个字符', trigger: 'blur' }
   ],
+  qqid: [
+    { required: true, message: '请输入主要QQ号', trigger: 'blur' },
+    { pattern: /^[1-9][0-9]{4,14}$/, message: 'QQ号格式不正确', trigger: 'blur' }
+  ],
   email: [
     { required: true, message: '请输入邮箱', trigger: 'blur' },
     { type: 'email', message: '邮箱格式不正确', trigger: ['blur', 'change'] }
