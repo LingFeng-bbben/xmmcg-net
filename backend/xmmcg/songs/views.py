@@ -10,6 +10,7 @@ from django.conf import settings
 import io
 import zipfile
 import logging
+import hashlib
 
 from xmmcg.settings import ENABLE_CHART_FORWARD_TO_MAJDATA
 
@@ -722,10 +723,13 @@ def target_bids_list(request):
     current_user = request.user
 
     for bid in bids_qs:
+        raw_username = bid.user.username
+        hash_obj = hashlib.md5(raw_username.encode('utf-8'))
+        anonymous_name = hash_obj.hexdigest()[:6].upper()
         results.append({
             'id': bid.id,
             'amount': bid.amount,
-            'username': bid.user.username,  # 显示用户名
+            'username': anonymous_name,  # 显示匿名用户名
             # 'user_id': bid.user.id,       # 如果需要点击跳转用户主页
             'created_at': bid.created_at,
             'is_self': bid.user == current_user,  # 关键字段：是否是当前用户
